@@ -1,3 +1,5 @@
+# This project is in the early prototype / dreaming phase
+
 Hanoverd - The docker handover daemon
 -------------------------------------
 
