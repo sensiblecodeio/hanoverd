@@ -39,14 +39,18 @@ func main() {
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
+
 	listener := make(chan *docker.APIEvents)
-	defer close(listener)
 	client.AddEventListener(listener)
+	defer close(listener)
 	defer client.RemoveEventListener(listener)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+
+		// TODO(pwaller): Unsure if this loop serves any purpose yet. We're
+		// probably better off doing synchronization elsewhere.
 
 		for ev := range listener {
 			switch ev.Status {
@@ -72,10 +76,32 @@ func main() {
 	}()
 
 	wg.Add(1)
-	go start(client, "hello", &wg, dying.Barrier())
+	go func() {
+		defer wg.Done()
+
+		c := NewContainer(client, "hello")
+		defer c.Delete()
+
+		c.Create()
+
+		go func() {
+			// Listen for close, and then kill the container
+			<-dying.Barrier()
+			c.closing.Fall()
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.CopyOutput(os.Stdout)
+		}()
+
+		c.Start()
+		c.Wait()
+	}()
 
 	sig := make(chan os.Signal)
-	signal.Notify(sig)
+	signal.Notify(sig, os.Interrupt)
 
 	select {
 	case <-sig:
@@ -83,24 +109,38 @@ func main() {
 	}
 }
 
-func start(client *docker.Client, name string, wg *sync.WaitGroup, dying <-chan struct{}) {
-	defer wg.Done()
+type Container struct {
+	Name string
 
+	client    *docker.Client
+	container *docker.Container
+	closing   barrier.Barrier
+}
+
+func NewContainer(client *docker.Client, name string) *Container {
+	return &Container{
+		Name:   name,
+		client: client,
+	}
+}
+
+func (c *Container) Create() {
 	opts := docker.CreateContainerOptions{
-		Name: name,
+		Name: c.Name,
 		Config: &docker.Config{
 			Image: "base",
 			// Cmd:          []string{"date"},
 			Cmd: []string{"bash", "-c", onelineweb},
 
-			Hostname:     "hello",
+			Hostname:     "container",
 			ExposedPorts: map[docker.Port]struct{}{"8000/tcp": struct{}{}},
 			AttachStdout: true,
 			AttachStderr: true,
 		},
 	}
 
-	container, err := client.CreateContainer(opts)
+	var err error
+	c.container, err = c.client.CreateContainer(opts)
 	switch DockerErrorStatus(err) {
 	default:
 		fallthrough
@@ -111,45 +151,41 @@ func start(client *docker.Client, name string, wg *sync.WaitGroup, dying <-chan 
 	case http.StatusOK:
 		break
 	}
+}
 
-	defer func() {
-		// Delete the container
-		defer log.Println("Container deleted")
-		client.RemoveContainer(docker.RemoveContainerOptions{
-			ID:            name,
-			RemoveVolumes: true,
-			Force:         true,
-		})
-	}()
+// CopyOutput copies the output of the container to `w` and blocks until
+// completion
+func (c *Container) CopyOutput(w io.Writer) {
+	// Blocks until stream closed
+	err := c.client.AttachToContainer(docker.AttachToContainerOptions{
+		Container:    c.container.ID,
+		OutputStream: w,
+		ErrorStream:  w,
+		Logs:         true,
+		Stdout:       true,
+		Stderr:       true,
+		Stream:       true,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
-	// reader, writer := io.Pipe()
-	// wg.Add(1)
-	// go func() {
-	// 	defer wg.Done()
-	// 	io.Copy(os.Stderr, reader)
-	// }()
+func (c *Container) AwaitListening() {
+	var err error
+	// Load container.NetworkSettings
+	c.container, err = c.client.InspectContainer(c.container.ID)
+	if err != nil {
+		panic(err)
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		// defer writer.Close()
-		// Blocks until stream closed
-		err = client.AttachToContainer(docker.AttachToContainerOptions{
-			Container: container.ID,
-			// OutputStream: writer,
-			// ErrorStream:  writer,
-			OutputStream: os.Stderr,
-			ErrorStream:  os.Stderr,
-			Logs:         true,
-			Stdout:       true,
-			Stderr:       true,
-			Stream:       true,
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-	}()
+	// TODO(pwaller): Listening logic
+	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
+		log.Println("port:", port)
+	}
+}
 
+func (c *Container) Start() {
 	hc := &docker.HostConfig{
 		// Bind mounts
 		// Binds: []string{""},
@@ -159,35 +195,35 @@ func start(client *docker.Client, name string, wg *sync.WaitGroup, dying <-chan 
 			},
 		},
 	}
-	err = client.StartContainer(container.ID, hc)
+	err := c.client.StartContainer(c.container.ID, hc)
 	if err != nil {
 		panic(err)
 	}
+}
 
-	// Load container.NetworkSettings
-	container, err = client.InspectContainer(container.ID)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, port := range container.NetworkSettings.PortMappingAPI() {
-		log.Println("port:", port)
-	}
-
+func (c *Container) Wait() {
 	go func() {
-		// Listen for close, and then kill the container
-		<-dying
-		client.KillContainer(docker.KillContainerOptions{
-			ID: container.ID,
+		<-c.closing.Barrier()
+		// If the container is signaled to close, send a kill signal
+		c.client.KillContainer(docker.KillContainerOptions{
+			ID: c.container.ID,
 		})
 	}()
 
-	w, err := client.WaitContainer(container.ID)
+	w, err := c.client.WaitContainer(c.container.ID)
 	if err != nil {
 		panic(err)
 	}
 
-	log.Println("Container exited:", w)
+	log.Println("Exit status:", w)
+}
+
+func (c *Container) Delete() {
+	c.client.RemoveContainer(docker.RemoveContainerOptions{
+		ID:            c.container.ID,
+		RemoveVolumes: true,
+		Force:         true,
+	})
 }
 
 const onelineweb = "while true; do { echo -e 'HTTP/1.1 200 OK\r\n'; echo hello world; } | nc -l 8000; done"
