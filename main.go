@@ -120,6 +120,13 @@ func main() {
 			<-sig
 			log.Println("Signalled!")
 
+			// NOTEs from messing with iptables proxying:
+			// For external:
+			// iptables -A PREROUTING -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
+			// For internal:
+			// iptables -A OUTPUT -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
+			// To delete a rule, use -D rather than -A.
+
 			d := NewContainer(client, getName(), &wg, &dying)
 			wg.Add(1)
 			go Go(d)
