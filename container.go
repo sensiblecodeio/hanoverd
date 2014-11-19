@@ -25,16 +25,26 @@ type Container struct {
 	errorsW chan<- error
 }
 
-func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Container {
+func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup, dying *barrier.Barrier) *Container {
+
 	errors := make(chan error)
 
-	return &Container{
+	c := &Container{
 		Name:    name,
 		client:  client,
 		wg:      wg,
 		Errors:  errors,
 		errorsW: errors,
 	}
+
+	// :TODO(drj,pwaller): refactor to put this forwarding idiom on the barrier.
+	go func() {
+		// Listen for close, and then kill the container
+		<-dying.Barrier()
+		c.Closing.Fall()
+	}()
+
+	return c
 }
 
 func (c *Container) Build() error {
@@ -61,18 +71,8 @@ func (c *Container) Create() error {
 
 	var err error
 	c.container, err = c.client.CreateContainer(opts)
-	switch DockerErrorStatus(err) {
-	default:
-		fallthrough
-	case 0:
-		return err
-	case http.StatusConflict:
-		log.Fatalln("Container already exists. Aborting.")
-	case http.StatusOK:
-		break
-	}
 
-	return nil
+	return err
 }
 
 // CopyOutput copies the output of the container to `w` and blocks until
@@ -123,12 +123,17 @@ func (c *Container) Start() error {
 		return err
 	}
 
+	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		<-c.Closing.Barrier()
 		// If the container is signaled to close, send a kill signal
-		c.client.KillContainer(docker.KillContainerOptions{
+		err := c.client.KillContainer(docker.KillContainerOptions{
 			ID: c.container.ID,
 		})
+		if err != nil {
+			log.Println("killing container", c.container.ID, err)
+		}
 	}()
 	return nil
 }
@@ -144,17 +149,18 @@ func (c *Container) err(err error) {
 
 func (c *Container) Run() (int, error) {
 
+	defer close(c.errorsW)
+
 	err := c.Build()
 	if err != nil {
 		return -2, err
 	}
 
 	err = c.Create()
-	defer c.Delete()
-
 	if err != nil {
 		return -1, err
 	}
+	defer c.Delete()
 
 	c.wg.Add(1)
 	go func() {

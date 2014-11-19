@@ -30,11 +30,11 @@ func DockerErrorStatus(err error) int {
 }
 
 func main() {
-	log.Println("Handover")
+	log.Println("Hanoverd")
 
 	client, err := docker.NewClient("unix:///run/docker.sock")
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	var wg sync.WaitGroup
@@ -75,16 +75,7 @@ func main() {
 		io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
-	c := NewContainer(client, "hello", &wg)
-
-	go func() {
-		// Listen for close, and then kill the container
-		<-dying.Barrier()
-		c.Closing.Fall()
-	}()
-
-	wg.Add(1)
-	go func() {
+	Go := func(c *Container) {
 		defer wg.Done()
 		defer dying.Fall()
 
@@ -96,16 +87,29 @@ func main() {
 
 		status, err := c.Run()
 		if err != nil {
-			log.Panic(err)
+			log.Println(err)
+			dying.Fall()
+			return
 		}
 		log.Println("exit:", status)
+	}
+
+	c := NewContainer(client, "hello", &wg, &dying)
+	wg.Add(1)
+	go Go(c)
+
+	go func() {
+		sig := make(chan os.Signal)
+		signal.Notify(sig, os.Interrupt)
+		for {
+			<-sig
+			log.Println("Signalled!")
+
+			d := NewContainer(client, "other", &wg, &dying)
+			wg.Add(1)
+			go Go(d)
+		}
 	}()
 
-	sig := make(chan os.Signal)
-	signal.Notify(sig, os.Interrupt)
-
-	select {
-	case <-sig:
-	case <-dying.Barrier():
-	}
+	<-dying.Barrier()
 }
