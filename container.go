@@ -37,15 +37,23 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Conta
 	}
 }
 
+func (c *Container) Build() error {
+	var err error
+	bo := docker.BuildImageOptions{}
+	bo.ContextDir, err = os.Getwd()
+	if err != nil {
+		return err
+	}
+	bo.OutputStream = os.Stderr
+	bo.Name = c.Name
+	return c.client.BuildImage(bo)
+}
+
 func (c *Container) Create() error {
 	opts := docker.CreateContainerOptions{
 		Name: c.Name,
 		Config: &docker.Config{
-			Image: "base",
-			Cmd:   []string{"bash", "-c", onelineweb},
-
-			Hostname:     "container",
-			ExposedPorts: map[docker.Port]struct{}{"8000/tcp": struct{}{}},
+			Image:        c.Name,
 			AttachStdout: true,
 			AttachStderr: true,
 		},
@@ -102,13 +110,7 @@ func (c *Container) AwaitListening() {
 
 func (c *Container) Start() error {
 	hc := &docker.HostConfig{
-		// Bind mounts
-		// Binds: []string{""},
-		PortBindings: map[docker.Port][]docker.PortBinding{
-			"8000/tcp": []docker.PortBinding{
-				docker.PortBinding{HostIP: "0.0.0.0"},
-			},
-		},
+		PublishAllPorts: true,
 	}
 	err := c.client.StartContainer(c.container.ID, hc)
 	if err != nil {
@@ -135,9 +137,19 @@ func (c *Container) Wait() (int, error) {
 	return c.client.WaitContainer(c.container.ID)
 }
 
+func (c *Container) err(err error) {
+	c.errorsW <- err
+	c.Closing.Fall()
+}
+
 func (c *Container) Run() (int, error) {
 
-	err := c.Create()
+	err := c.Build()
+	if err != nil {
+		return -2, err
+	}
+
+	err = c.Create()
 	defer c.Delete()
 
 	if err != nil {
@@ -149,7 +161,7 @@ func (c *Container) Run() (int, error) {
 		defer c.wg.Done()
 		err := c.CopyOutput()
 		if err != nil {
-			c.errorsW <- err
+			c.err(err)
 		}
 	}()
 
@@ -173,5 +185,3 @@ func (c *Container) Delete() {
 		Force:         true,
 	})
 }
-
-const onelineweb = "sleep 0.05; while true; do { printf 'HTTP/1.1 200 OK\r\n\r\n'; printf 'hello world\r\n'; } | nc -l 8000; done"

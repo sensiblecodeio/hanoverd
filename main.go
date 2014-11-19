@@ -86,6 +86,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer dying.Fall()
 
 		go func() {
 			for err := range c.Errors {
