@@ -31,7 +31,7 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Conta
 	}
 }
 
-func (c *Container) Create() {
+func (c *Container) Create() error {
 	opts := docker.CreateContainerOptions{
 		Name: c.Name,
 		Config: &docker.Config{
@@ -51,12 +51,14 @@ func (c *Container) Create() {
 	default:
 		fallthrough
 	case 0:
-		panic(err)
+		return err
 	case http.StatusConflict:
 		log.Fatalln("Container already exists. Aborting.")
 	case http.StatusOK:
 		break
 	}
+
+	return nil
 }
 
 // CopyOutput copies the output of the container to `w` and blocks until
@@ -73,10 +75,11 @@ func (c *Container) CopyOutput(w io.Writer) {
 		Stream:       true,
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 }
 
+// :todo(drj): May want to return errors for truly broken containers (timeout).
 func (c *Container) AwaitListening() {
 
 	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
@@ -92,7 +95,7 @@ func (c *Container) AwaitListening() {
 	c.Ready.Fall()
 }
 
-func (c *Container) Start() {
+func (c *Container) Start() error {
 	hc := &docker.HostConfig{
 		// Bind mounts
 		// Binds: []string{""},
@@ -104,13 +107,13 @@ func (c *Container) Start() {
 	}
 	err := c.client.StartContainer(c.container.ID, hc)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	// Load container.NetworkSettings
 	c.container, err = c.client.InspectContainer(c.container.ID)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	go func() {
@@ -120,22 +123,21 @@ func (c *Container) Start() {
 			ID: c.container.ID,
 		})
 	}()
+	return nil
 }
 
-func (c *Container) Wait() {
-
-	w, err := c.client.WaitContainer(c.container.ID)
-	if err != nil {
-		panic(err)
-	}
-
-	log.Println("Exit status:", w)
+func (c *Container) Wait() (int, error) {
+	return c.client.WaitContainer(c.container.ID)
 }
 
-func (c *Container) Run() {
+func (c *Container) Run() (int, error) {
 
-	c.Create()
+	err := c.Create()
 	defer c.Delete()
+
+	if err != nil {
+		return -1, err
+	}
 
 	c.wg.Add(1)
 	go func() {
@@ -143,14 +145,17 @@ func (c *Container) Run() {
 		c.CopyOutput(os.Stdout)
 	}()
 
-	c.Start()
+	err = c.Start()
+	if err != nil {
+		return -1, err
+	}
 
 	go func() {
 		c.AwaitListening()
 		log.Println("Listening on", c.container.NetworkSettings.PortMappingAPI())
 	}()
 
-	c.Wait()
+	return c.Wait()
 }
 
 func (c *Container) Delete() {

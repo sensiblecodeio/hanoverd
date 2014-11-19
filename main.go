@@ -86,7 +86,11 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.Run()
+		status, err := c.Run()
+		if err != nil {
+			log.Panic(err)
+		}
+		log.Println("exit:", status)
 	}()
 
 	sig := make(chan os.Signal)
