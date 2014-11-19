@@ -63,6 +63,7 @@ func (c *Container) Create() error {
 	opts := docker.CreateContainerOptions{
 		Name: c.Name,
 		Config: &docker.Config{
+			Hostname:     c.Name,
 			Image:        c.Name,
 			AttachStdout: true,
 			AttachStderr: true,
