@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -21,13 +20,20 @@ type Container struct {
 
 	Closing, Ready barrier.Barrier
 	wg             *sync.WaitGroup
+
+	Errors  <-chan error
+	errorsW chan<- error
 }
 
 func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Container {
+	errors := make(chan error)
+
 	return &Container{
-		Name:   name,
-		client: client,
-		wg:     wg,
+		Name:    name,
+		client:  client,
+		wg:      wg,
+		Errors:  errors,
+		errorsW: errors,
 	}
 }
 
@@ -63,9 +69,11 @@ func (c *Container) Create() error {
 
 // CopyOutput copies the output of the container to `w` and blocks until
 // completion
-func (c *Container) CopyOutput(w io.Writer) {
+func (c *Container) CopyOutput() error {
+	// TODO(pwaller): at some point move this on to 'c' for configurability?
+	w := os.Stderr
 	// Blocks until stream closed
-	err := c.client.AttachToContainer(docker.AttachToContainerOptions{
+	return c.client.AttachToContainer(docker.AttachToContainerOptions{
 		Container:    c.container.ID,
 		OutputStream: w,
 		ErrorStream:  w,
@@ -74,9 +82,6 @@ func (c *Container) CopyOutput(w io.Writer) {
 		Stderr:       true,
 		Stream:       true,
 	})
-	if err != nil {
-		log.Panic(err)
-	}
 }
 
 // :todo(drj): May want to return errors for truly broken containers (timeout).
@@ -142,7 +147,10 @@ func (c *Container) Run() (int, error) {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		c.CopyOutput(os.Stdout)
+		err := c.CopyOutput()
+		if err != nil {
+			c.errorsW <- err
+		}
 	}()
 
 	err = c.Start()

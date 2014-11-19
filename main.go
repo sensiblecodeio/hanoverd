@@ -86,6 +86,13 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+
+		go func() {
+			for err := range c.Errors {
+				log.Println("BUG: Async container error:", err)
+			}
+		}()
+
 		status, err := c.Run()
 		if err != nil {
 			log.Panic(err)
