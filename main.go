@@ -75,19 +75,19 @@ func main() {
 		io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
+	c := NewContainer(client, "hello")
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
-		c := NewContainer(client, "hello")
-		defer c.Delete()
-
 		c.Create()
+		defer c.Delete()
 
 		go func() {
 			// Listen for close, and then kill the container
 			<-dying.Barrier()
-			c.closing.Fall()
+			c.Closing.Fall()
 		}()
 
 		wg.Add(1)
@@ -97,6 +97,12 @@ func main() {
 		}()
 
 		c.Start()
+
+		go func() {
+			c.AwaitListening()
+			log.Println("Listening on", c.container.NetworkSettings.PortMappingAPI())
+		}()
+
 		c.Wait()
 	}()
 

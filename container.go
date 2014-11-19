@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
@@ -14,7 +16,8 @@ type Container struct {
 
 	client    *docker.Client
 	container *docker.Container
-	closing   barrier.Barrier
+
+	Closing, Ready barrier.Barrier
 }
 
 func NewContainer(client *docker.Client, name string) *Container {
@@ -29,8 +32,7 @@ func (c *Container) Create() {
 		Name: c.Name,
 		Config: &docker.Config{
 			Image: "base",
-			// Cmd:          []string{"date"},
-			Cmd: []string{"bash", "-c", onelineweb},
+			Cmd:   []string{"bash", "-c", onelineweb},
 
 			Hostname:     "container",
 			ExposedPorts: map[docker.Port]struct{}{"8000/tcp": struct{}{}},
@@ -79,10 +81,17 @@ func (c *Container) AwaitListening() {
 		panic(err)
 	}
 
-	// TODO(pwaller): Listening logic
 	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
-		log.Println("port:", port)
+		url := fmt.Sprint("http://", port.IP, ":", port.PublicPort, "/")
+		for {
+			response, err := http.Get(url)
+			if err == nil && response.StatusCode == http.StatusOK {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
+	c.Ready.Fall()
 }
 
 func (c *Container) Start() {
@@ -99,16 +108,17 @@ func (c *Container) Start() {
 	if err != nil {
 		panic(err)
 	}
-}
 
-func (c *Container) Wait() {
 	go func() {
-		<-c.closing.Barrier()
+		<-c.Closing.Barrier()
 		// If the container is signaled to close, send a kill signal
 		c.client.KillContainer(docker.KillContainerOptions{
 			ID: c.container.ID,
 		})
 	}()
+}
+
+func (c *Container) Wait() {
 
 	w, err := c.client.WaitContainer(c.container.ID)
 	if err != nil {
@@ -126,4 +136,4 @@ func (c *Container) Delete() {
 	})
 }
 
-const onelineweb = "while true; do { echo -e 'HTTP/1.1 200 OK\r\n'; echo hello world; } | nc -l 8000; done"
+const onelineweb = "sleep 0.05; while true; do { printf 'HTTP/1.1 200 OK\r\n\r\n'; printf 'hello world\r\n'; } | nc -l 8000; done"
