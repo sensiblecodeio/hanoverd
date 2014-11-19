@@ -75,35 +75,18 @@ func main() {
 		io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
-	c := NewContainer(client, "hello")
+	c := NewContainer(client, "hello", &wg)
+
+	go func() {
+		// Listen for close, and then kill the container
+		<-dying.Barrier()
+		c.Closing.Fall()
+	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-
-		c.Create()
-		defer c.Delete()
-
-		go func() {
-			// Listen for close, and then kill the container
-			<-dying.Barrier()
-			c.Closing.Fall()
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			c.CopyOutput(os.Stdout)
-		}()
-
-		c.Start()
-
-		go func() {
-			c.AwaitListening()
-			log.Println("Listening on", c.container.NetworkSettings.PortMappingAPI())
-		}()
-
-		c.Wait()
+		c.Run()
 	}()
 
 	sig := make(chan os.Signal)

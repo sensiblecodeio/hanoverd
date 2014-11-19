@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/fsouza/go-dockerclient"
@@ -18,12 +20,14 @@ type Container struct {
 	container *docker.Container
 
 	Closing, Ready barrier.Barrier
+	wg             *sync.WaitGroup
 }
 
-func NewContainer(client *docker.Client, name string) *Container {
+func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Container {
 	return &Container{
 		Name:   name,
 		client: client,
+		wg:     wg,
 	}
 }
 
@@ -74,12 +78,6 @@ func (c *Container) CopyOutput(w io.Writer) {
 }
 
 func (c *Container) AwaitListening() {
-	var err error
-	// Load container.NetworkSettings
-	c.container, err = c.client.InspectContainer(c.container.ID)
-	if err != nil {
-		panic(err)
-	}
 
 	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
 		url := fmt.Sprint("http://", port.IP, ":", port.PublicPort, "/")
@@ -109,6 +107,12 @@ func (c *Container) Start() {
 		panic(err)
 	}
 
+	// Load container.NetworkSettings
+	c.container, err = c.client.InspectContainer(c.container.ID)
+	if err != nil {
+		panic(err)
+	}
+
 	go func() {
 		<-c.Closing.Barrier()
 		// If the container is signaled to close, send a kill signal
@@ -126,6 +130,27 @@ func (c *Container) Wait() {
 	}
 
 	log.Println("Exit status:", w)
+}
+
+func (c *Container) Run() {
+
+	c.Create()
+	defer c.Delete()
+
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		c.CopyOutput(os.Stdout)
+	}()
+
+	c.Start()
+
+	go func() {
+		c.AwaitListening()
+		log.Println("Listening on", c.container.NetworkSettings.PortMappingAPI())
+	}()
+
+	c.Wait()
 }
 
 func (c *Container) Delete() {
