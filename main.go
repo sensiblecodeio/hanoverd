@@ -5,13 +5,16 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"sync"
+	"sync/atomic"
 
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
@@ -94,7 +97,19 @@ func main() {
 		log.Println("exit:", status)
 	}
 
-	c := NewContainer(client, "hello", &wg, &dying)
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	baseName := path.Base(wd)
+
+	var i uint64
+	getName := func() string {
+		n := atomic.AddUint64(&i, 1)
+		return fmt.Sprint(baseName, "_", n)
+	}
+
+	c := NewContainer(client, getName(), &wg, &dying)
 	wg.Add(1)
 	go Go(c)
 
@@ -105,7 +120,7 @@ func main() {
 			<-sig
 			log.Println("Signalled!")
 
-			d := NewContainer(client, "other", &wg, &dying)
+			d := NewContainer(client, getName(), &wg, &dying)
 			wg.Add(1)
 			go Go(d)
 		}
