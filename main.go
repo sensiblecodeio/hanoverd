@@ -76,10 +76,13 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier) {
 		return fmt.Sprint(baseName, "_", n)
 	}
 
-	var previous *Container
+	var liveMutex sync.Mutex
+	var live *Container
+
 	for {
 
 		c := NewContainer(client, getName(), wg, dying)
+
 		wg.Add(1)
 		go func(c *Container) {
 			defer wg.Done()
@@ -93,48 +96,68 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier) {
 			status, err := c.Run()
 			if err != nil {
 				log.Println(err)
-				dying.Fall()
+				c.Failed.Fall()
 				return
 			}
 			log.Println(c.Name, "exit:", status)
 		}(c)
 
-		redirected := make(chan struct{})
+		go func(c *Container) {
 
-		// Configure port redirect
-		go func() {
-			<-c.Ready.Barrier()
+			log.Println("Awaiting container fate:", c.Name)
+			select {
+			case <-c.Failed.Barrier():
+				log.Println("Container failed before going live:", c.Name)
+				c.Closing.Fall()
+				return
+			case <-c.Superceded.Barrier():
+				log.Println("Container superceded before going live:", c.Name)
+				c.Closing.Fall()
+				return
+			case <-c.Closing.Barrier():
+				log.Println("Container closed before going live:", c.Name)
+				log.Println("(This should never happen?)")
+				return
+
+			case <-c.Ready.Barrier():
+			}
+
+			log.Println("Container going live:", c.Name)
+
+			liveMutex.Lock()
+			defer liveMutex.Unlock()
+			previousLive := live
+
+			// Block main exit until the firewall rule has been removed
+			wg.Add(1)
 
 			target := c.container.NetworkSettings.PortMappingAPI()[0].PublicPort
 			remove, err := ConfigureRedirect(5555, target)
 			if err != nil {
+				// Firewall rule didn't get applied.
+				wg.Done()
 				c.err(err)
 				return
 			}
 
+			live = c
+			if previousLive != nil {
+				previousLive.Closing.Fall()
+			}
+
 			// Networking
-			wg.Add(1)
 			go func() {
 				defer wg.Done()
+
 				<-c.Closing.Barrier()
 				remove()
 			}()
-			close(redirected)
-		}()
-
-		if previous != nil {
-			// Previous container teardown
-			go func(previous *Container) {
-				// Await ready
-				<-redirected
-
-				// TODO(pwaller): "kill all previous"
-				previous.Closing.Fall()
-			}(previous)
-		}
+		}(c)
 
 		<-sig
+
+		c.Superceded.Fall()
+
 		log.Println("Signalled!")
-		previous = c
 	}
 }
