@@ -13,36 +13,50 @@ import (
 // iptables -A OUTPUT -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
 // To delete a rule, use -D rather than -A.
 
-func iptables(addOrRemove, chain string, source, target int64) *exec.Cmd {
-	return exec.Command(
-		"iptables",
-		"-t", "nat",
-		addOrRemove, chain,
-		"-j", "REDIRECT",
-		"-p", "tcp", "-m", "tcp",
-		"--dport", fmt.Sprint(source),
-		"--to-ports", fmt.Sprint(target))
+type Action bool
+
+const (
+	INSERT Action = true
+	DELETE        = false
+)
+
+func iptables(action Action, chain string, source, target int64) *exec.Cmd {
+	switch action {
+	case INSERT:
+		return exec.Command(
+			"iptables", "-I", chain, "1",
+			"-t", "nat", "-j", "REDIRECT",
+			"-p", "tcp", "-m", "tcp",
+			"--dport", fmt.Sprint(source), "--to-ports", fmt.Sprint(target))
+	case DELETE:
+		return exec.Command(
+			"iptables", "-D", chain,
+			"-t", "nat", "-j", "REDIRECT",
+			"-p", "tcp", "-m", "tcp",
+			"--dport", fmt.Sprint(source), "--to-ports", fmt.Sprint(target))
+	}
+	panic("unreachable")
 }
 
 func ConfigureRedirect(source, target int64) (func(), error) {
 
 	log.Println("Setting up prerouting rule for", target)
-	err := iptables("-A", "PREROUTING", source, target).Run()
+	err := iptables(INSERT, "PREROUTING", source, target).Run()
 	if err != nil {
 		return nil, err
 	}
 	log.Println("Setting up output rule for", target)
-	err = iptables("-A", "OUTPUT", source, target).Run()
+	err = iptables(INSERT, "OUTPUT", source, target).Run()
 	if err != nil {
 		return nil, err
 	}
 
 	remove := func() {
-		err := iptables("-D", "PREROUTING", source, target).Run()
+		err := iptables(DELETE, "PREROUTING", source, target).Run()
 		if err != nil {
 			log.Println("Failed to remove iptables rule:", source, target)
 		}
-		err = iptables("-D", "OUTPUT", source, target).Run()
+		err = iptables(DELETE, "OUTPUT", source, target).Run()
 		if err != nil {
 			log.Println("Failed to remove iptables rule:", source, target)
 		}
