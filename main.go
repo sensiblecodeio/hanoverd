@@ -43,44 +43,19 @@ func main() {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
-	listener := make(chan *docker.APIEvents)
-	client.AddEventListener(listener)
-	defer close(listener)
-	defer client.RemoveEventListener(listener)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		// TODO(pwaller): Unsure if this loop serves any purpose yet. We're
-		// probably better off doing synchronization elsewhere.
-
-		for ev := range listener {
-			switch ev.Status {
-			case "create":
-			case "start":
-				log.Println("Container started:", ev.ID)
-			case "die":
-				log.Println("Container finished:", ev.ID)
-			default:
-				log.Printf("Ev: %#+v", ev)
-			}
-		}
-	}()
-
 	// Fired when we're signalled to exit
 	var dying barrier.Barrier
 	defer dying.Fall()
 
 	go func() {
 		defer dying.Fall()
-		// Await Stdin closure
-		io.Copy(ioutil.Discard, os.Stdin)
+		// Await Stdin closure, don't care about errors
+		_, _ = io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
 	Go := func(c *Container) {
 		defer wg.Done()
-		defer dying.Fall()
+		// defer dying.Fall()
 
 		go func() {
 			for err := range c.Errors {
@@ -94,7 +69,7 @@ func main() {
 			dying.Fall()
 			return
 		}
-		log.Println("exit:", status)
+		log.Println(c.Name, "exit:", status)
 	}
 
 	wd, err := os.Getwd()
@@ -109,15 +84,11 @@ func main() {
 		return fmt.Sprint(baseName, "_", n)
 	}
 
-	c := NewContainer(client, getName(), &wg, &dying)
-	wg.Add(1)
-	go Go(c)
-
 	go func() {
 		sig := make(chan os.Signal)
 		signal.Notify(sig, os.Interrupt)
+		var previous *Container
 		for {
-			<-sig
 			log.Println("Signalled!")
 
 			// NOTEs from messing with iptables proxying:
@@ -127,9 +98,23 @@ func main() {
 			// iptables -A OUTPUT -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
 			// To delete a rule, use -D rather than -A.
 
-			d := NewContainer(client, getName(), &wg, &dying)
+			c := NewContainer(client, getName(), &wg, &dying)
 			wg.Add(1)
-			go Go(d)
+			go Go(c)
+
+			if previous != nil {
+				go func(previous *Container) {
+					// Await ready
+					<-c.Ready.Barrier()
+
+					// TODO(pwaller): "kill all previous"
+					previous.Closing.Fall()
+				}(previous)
+			}
+
+			<-sig
+			previous = c
+			_ = previous
 		}
 	}()
 

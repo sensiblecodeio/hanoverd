@@ -179,6 +179,7 @@ func (c *Container) Run() (int, error) {
 
 	go func() {
 		c.AwaitListening()
+		c.Ready.Fall()
 		log.Println("Listening on", c.container.NetworkSettings.PortMappingAPI())
 	}()
 
