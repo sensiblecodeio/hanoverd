@@ -6,6 +6,22 @@ Hanoverd - The docker handover daemon
 Hanoverd ("Hanover-Dee") is responsible for managing seemless transitions from
 one application version to another with Docker containers.
 
+## Installation
+
+Hanoverd currently requires the ability to mess with iptables. This can be
+achieved with setcap to avoid using root.
+
+A suitably capable `iptables` command must be on the `$PATH`. This can be
+achieved with this command:
+
+```
+cp $(which iptables) .
+sudo setcap 'cap_net_admin,cap_net_raw=+ep' iptables
+PATH=.:$PATH hanoverd
+```
+
+(or you can use some directory other than `.`).
+
 ## User experience
 
 * You run one hanoverd per application you wish to run in Docker.

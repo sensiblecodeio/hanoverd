@@ -55,7 +55,6 @@ func main() {
 
 	Go := func(c *Container) {
 		defer wg.Done()
-		// defer dying.Fall()
 
 		go func() {
 			for err := range c.Errors {
@@ -91,21 +90,39 @@ func main() {
 		for {
 			log.Println("Signalled!")
 
-			// NOTEs from messing with iptables proxying:
-			// For external:
-			// iptables -A PREROUTING -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
-			// For internal:
-			// iptables -A OUTPUT -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
-			// To delete a rule, use -D rather than -A.
-
 			c := NewContainer(client, getName(), &wg, &dying)
 			wg.Add(1)
 			go Go(c)
 
+			redirected := make(chan struct{})
+
+			// Configure port redirect
+			go func() {
+				<-c.Ready.Barrier()
+
+				target := c.container.NetworkSettings.PortMappingAPI()[0].PublicPort
+				remove, err := ConfigureRedirect(5555, target)
+				if err != nil {
+					c.err(err)
+					return
+				}
+
+				// Networking
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-c.Closing.Barrier()
+					remove()
+					log.Println("Old rules removed for", c.Name)
+				}()
+				close(redirected)
+			}()
+
 			if previous != nil {
+				// Previous container teardown
 				go func(previous *Container) {
 					// Await ready
-					<-c.Ready.Barrier()
+					<-redirected
 
 					// TODO(pwaller): "kill all previous"
 					previous.Closing.Fall()
@@ -114,7 +131,6 @@ func main() {
 
 			<-sig
 			previous = c
-			_ = previous
 		}
 	}()
 
