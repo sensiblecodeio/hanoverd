@@ -55,7 +55,7 @@ func main() {
 
 	Go := func(c *Container) {
 		defer wg.Done()
-		defer dying.Fall()
+		// defer dying.Fall()
 
 		go func() {
 			for err := range c.Errors {
@@ -69,7 +69,7 @@ func main() {
 			dying.Fall()
 			return
 		}
-		log.Println("exit:", status)
+		log.Println(c.Name, "exit:", status)
 	}
 
 	wd, err := os.Getwd()
@@ -84,15 +84,11 @@ func main() {
 		return fmt.Sprint(baseName, "_", n)
 	}
 
-	c := NewContainer(client, getName(), &wg, &dying)
-	wg.Add(1)
-	go Go(c)
-
 	go func() {
 		sig := make(chan os.Signal)
 		signal.Notify(sig, os.Interrupt)
+		var previous *Container
 		for {
-			<-sig
 			log.Println("Signalled!")
 
 			// NOTEs from messing with iptables proxying:
@@ -102,9 +98,23 @@ func main() {
 			// iptables -A OUTPUT -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
 			// To delete a rule, use -D rather than -A.
 
-			d := NewContainer(client, getName(), &wg, &dying)
+			c := NewContainer(client, getName(), &wg, &dying)
 			wg.Add(1)
-			go Go(d)
+			go Go(c)
+
+			if previous != nil {
+				go func(previous *Container) {
+					// Await ready
+					<-c.Ready.Barrier()
+
+					// TODO(pwaller): "kill all previous"
+					previous.Closing.Fall()
+				}(previous)
+			}
+
+			<-sig
+			previous = c
+			_ = previous
 		}
 	}()
 
