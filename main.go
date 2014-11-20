@@ -35,11 +35,6 @@ func DockerErrorStatus(err error) int {
 func main() {
 	log.Println("Hanoverd")
 
-	client, err := docker.NewClient("unix:///run/docker.sock")
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
@@ -53,6 +48,22 @@ func main() {
 		_, _ = io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
+	go loop(&wg, &dying)
+
+	<-dying.Barrier()
+}
+
+func loop(wg *sync.WaitGroup, dying *barrier.Barrier) {
+	sig := make(chan os.Signal)
+	signal.Notify(sig, os.Interrupt)
+
+	client, err := docker.NewClient("unix:///run/docker.sock")
+	if err != nil {
+		dying.Fall()
+		log.Println(err)
+		return
+	}
+
 	wd, err := os.Getwd()
 	if err != nil {
 		panic(err)
@@ -65,71 +76,65 @@ func main() {
 		return fmt.Sprint(baseName, "_", n)
 	}
 
-	go func() {
-		sig := make(chan os.Signal)
-		signal.Notify(sig, os.Interrupt)
-		var previous *Container
-		for {
+	var previous *Container
+	for {
 
-			c := NewContainer(client, getName(), &wg, &dying)
-			wg.Add(1)
-			go func(c *Container) {
-				defer wg.Done()
+		c := NewContainer(client, getName(), wg, dying)
+		wg.Add(1)
+		go func(c *Container) {
+			defer wg.Done()
 
-				go func() {
-					for err := range c.Errors {
-						log.Println("BUG: Async container error:", err)
-					}
-				}()
-
-				status, err := c.Run()
-				if err != nil {
-					log.Println(err)
-					dying.Fall()
-					return
-				}
-				log.Println(c.Name, "exit:", status)
-			}(c)
-
-			redirected := make(chan struct{})
-
-			// Configure port redirect
 			go func() {
-				<-c.Ready.Barrier()
-
-				target := c.container.NetworkSettings.PortMappingAPI()[0].PublicPort
-				remove, err := ConfigureRedirect(5555, target)
-				if err != nil {
-					c.err(err)
-					return
+				for err := range c.Errors {
+					log.Println("BUG: Async container error:", err)
 				}
-
-				// Networking
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					<-c.Closing.Barrier()
-					remove()
-				}()
-				close(redirected)
 			}()
 
-			if previous != nil {
-				// Previous container teardown
-				go func(previous *Container) {
-					// Await ready
-					<-redirected
+			status, err := c.Run()
+			if err != nil {
+				log.Println(err)
+				dying.Fall()
+				return
+			}
+			log.Println(c.Name, "exit:", status)
+		}(c)
 
-					// TODO(pwaller): "kill all previous"
-					previous.Closing.Fall()
-				}(previous)
+		redirected := make(chan struct{})
+
+		// Configure port redirect
+		go func() {
+			<-c.Ready.Barrier()
+
+			target := c.container.NetworkSettings.PortMappingAPI()[0].PublicPort
+			remove, err := ConfigureRedirect(5555, target)
+			if err != nil {
+				c.err(err)
+				return
 			}
 
-			<-sig
-			log.Println("Signalled!")
-			previous = c
-		}
-	}()
+			// Networking
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-c.Closing.Barrier()
+				remove()
+			}()
+			close(redirected)
+		}()
 
-	<-dying.Barrier()
+		if previous != nil {
+			// Previous container teardown
+			go func(previous *Container) {
+				// Await ready
+				<-redirected
+
+				// TODO(pwaller): "kill all previous"
+				previous.Closing.Fall()
+			}(previous)
+		}
+
+		<-sig
+		log.Println("Signalled!")
+		previous = c
+	}
 }
