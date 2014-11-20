@@ -39,6 +39,9 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup, dying 
 		errorsW: errors,
 	}
 
+	// If the container fails we should assume it should be torn down.
+	c.Failed.Forward(&c.Closing)
+
 	return c
 }
 

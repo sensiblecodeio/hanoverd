@@ -126,7 +126,6 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 					// TODO(pwaller): If this case is hit we might not want to
 					// tear the container down really.
 					c.Failed.Fall()
-					c.Closing.Fall()
 				}
 			}()
 
