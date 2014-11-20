@@ -43,31 +43,6 @@ func main() {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
-	listener := make(chan *docker.APIEvents)
-	client.AddEventListener(listener)
-	defer close(listener)
-	defer client.RemoveEventListener(listener)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		// TODO(pwaller): Unsure if this loop serves any purpose yet. We're
-		// probably better off doing synchronization elsewhere.
-
-		for ev := range listener {
-			switch ev.Status {
-			case "create":
-			case "start":
-				log.Println("Container started:", ev.ID)
-			case "die":
-				log.Println("Container finished:", ev.ID)
-			default:
-				log.Printf("Ev: %#+v", ev)
-			}
-		}
-	}()
-
 	// Fired when we're signalled to exit
 	var dying barrier.Barrier
 	defer dying.Fall()
