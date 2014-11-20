@@ -39,13 +39,6 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup, dying 
 		errorsW: errors,
 	}
 
-	// :TODO(drj,pwaller): refactor to put this forwarding idiom on the barrier.
-	go func() {
-		// Listen for close, and then kill the container
-		<-dying.Barrier()
-		c.Closing.Fall()
-	}()
-
 	return c
 }
 

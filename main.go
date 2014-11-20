@@ -113,6 +113,8 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 		c := NewContainer(client, getName(), wg, dying)
 		c.Env = env
 
+		dying.Forward(&c.Closing)
+
 		wg.Add(1)
 		go func(c *Container) {
 			defer wg.Done()
