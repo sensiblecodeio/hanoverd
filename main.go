@@ -53,24 +53,6 @@ func main() {
 		_, _ = io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
-	Go := func(c *Container) {
-		defer wg.Done()
-
-		go func() {
-			for err := range c.Errors {
-				log.Println("BUG: Async container error:", err)
-			}
-		}()
-
-		status, err := c.Run()
-		if err != nil {
-			log.Println(err)
-			dying.Fall()
-			return
-		}
-		log.Println(c.Name, "exit:", status)
-	}
-
 	wd, err := os.Getwd()
 	if err != nil {
 		panic(err)
@@ -88,11 +70,26 @@ func main() {
 		signal.Notify(sig, os.Interrupt)
 		var previous *Container
 		for {
-			log.Println("Signalled!")
 
 			c := NewContainer(client, getName(), &wg, &dying)
 			wg.Add(1)
-			go Go(c)
+			go func(c *Container) {
+				defer wg.Done()
+
+				go func() {
+					for err := range c.Errors {
+						log.Println("BUG: Async container error:", err)
+					}
+				}()
+
+				status, err := c.Run()
+				if err != nil {
+					log.Println(err)
+					dying.Fall()
+					return
+				}
+				log.Println(c.Name, "exit:", status)
+			}(c)
 
 			redirected := make(chan struct{})
 
@@ -113,7 +110,6 @@ func main() {
 					defer wg.Done()
 					<-c.Closing.Barrier()
 					remove()
-					log.Println("Old rules removed for", c.Name)
 				}()
 				close(redirected)
 			}()
@@ -130,6 +126,7 @@ func main() {
 			}
 
 			<-sig
+			log.Println("Signalled!")
 			previous = c
 		}
 	}()
