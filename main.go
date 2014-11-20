@@ -49,8 +49,8 @@ func main() {
 
 	go func() {
 		defer dying.Fall()
-		// Await Stdin closure
-		io.Copy(ioutil.Discard, os.Stdin)
+		// Await Stdin closure, don't care about errors
+		_, _ = io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
 	Go := func(c *Container) {
