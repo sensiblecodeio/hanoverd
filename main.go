@@ -107,7 +107,7 @@ func httpInterface(events chan<- UpdateEvent) {
 		buildComplete := make(chan struct{})
 		defer func() { <-buildComplete }()
 		event := UpdateEvent{
-			OutputStream:  w,
+			OutputStream:  NewFlushWriter(w),
 			BuildComplete: buildComplete,
 		}
 
