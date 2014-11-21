@@ -42,7 +42,7 @@ type Options struct {
 func main() {
 
 	options := Options{
-		env:     opts.NewListOpts(nil),
+		env: opts.NewListOpts(nil),
 	}
 	mflag.Var(&options.env, []string{"e", "-env"}, "Set environment variables")
 
@@ -110,7 +110,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 
 	for {
 
-		c := NewContainer(client, getName(), wg, dying)
+		c := NewContainer(client, getName(), wg)
 		c.Env = env
 
 		// Global exit should cause container exit

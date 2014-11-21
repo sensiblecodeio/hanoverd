@@ -27,7 +27,7 @@ type Container struct {
 	errorsW chan<- error
 }
 
-func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup, dying *barrier.Barrier) *Container {
+func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Container {
 
 	errors := make(chan error)
 
