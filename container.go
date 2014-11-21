@@ -18,8 +18,9 @@ type Container struct {
 	client    *docker.Client
 	container *docker.Container
 
-	Closing, Ready barrier.Barrier
-	wg             *sync.WaitGroup
+	Failed, Superceded, Ready, Closing barrier.Barrier
+
+	wg *sync.WaitGroup
 
 	Errors  <-chan error
 	errorsW chan<- error

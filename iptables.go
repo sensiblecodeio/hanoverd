@@ -40,12 +40,10 @@ func iptables(action Action, chain string, source, target int64) *exec.Cmd {
 
 func ConfigureRedirect(source, target int64) (func(), error) {
 
-	log.Println("Setting up prerouting rule for", target)
 	err := iptables(INSERT, "PREROUTING", source, target).Run()
 	if err != nil {
 		return nil, err
 	}
-	log.Println("Setting up output rule for", target)
 	err = iptables(INSERT, "OUTPUT", source, target).Run()
 	if err != nil {
 		return nil, err
