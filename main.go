@@ -36,15 +36,17 @@ func DockerErrorStatus(err error) int {
 }
 
 type Options struct {
-	env opts.ListOpts
+	env, publish opts.ListOpts
 }
 
 func main() {
 
 	options := Options{
 		env:     opts.NewListOpts(nil),
+		publish: opts.NewListOpts(nil),
 	}
 	mflag.Var(&options.env, []string{"e", "-env"}, "Set environment variables")
+	mflag.Var(&options.publish, []string{"p", "-publish"}, "Publish a container's port to the host")
 
 	mflag.Parse()
 
