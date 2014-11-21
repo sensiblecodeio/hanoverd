@@ -103,8 +103,20 @@ func makeEnv(opt opts.ListOpts) []string {
 
 func httpInterface(events chan<- UpdateEvent) {
 	http.HandleFunc("/update", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Signal update")
-		events <- UpdateEvent{}
+
+		buildComplete := make(chan struct{})
+		defer func() { <-buildComplete }()
+		event := UpdateEvent{
+			OutputStream:  w,
+			BuildComplete: buildComplete,
+		}
+
+		switch r.Method {
+		default:
+			fmt.Fprintln(w, "Signal build $PWD")
+		}
+
+		events <- event
 	})
 	http.ListenAndServe("localhost:9123", nil)
 }
