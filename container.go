@@ -14,6 +14,7 @@ import (
 
 type Container struct {
 	Name string
+	Env  []string
 
 	client    *docker.Client
 	container *docker.Container
@@ -68,6 +69,7 @@ func (c *Container) Create() error {
 			Image:        c.Name,
 			AttachStdout: true,
 			AttachStderr: true,
+			Env:          c.Env,
 		},
 	}
 

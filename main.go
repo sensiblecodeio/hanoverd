@@ -13,9 +13,12 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"strings"
 	"sync"
 	"sync/atomic"
 
+	"github.com/docker/docker/opts"
+	"github.com/docker/docker/pkg/mflag"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
 )
@@ -32,7 +35,19 @@ func DockerErrorStatus(err error) int {
 	return 0
 }
 
+type Options struct {
+	env opts.ListOpts
+}
+
 func main() {
+
+	options := Options{
+		env:     opts.NewListOpts(nil),
+	}
+	mflag.Var(&options.env, []string{"e", "-env"}, "Set environment variables")
+
+	mflag.Parse()
+
 	log.Println("Hanoverd")
 
 	var wg sync.WaitGroup
@@ -48,12 +63,12 @@ func main() {
 		_, _ = io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
-	go loop(&wg, &dying)
+	go loop(&wg, &dying, options)
 
 	<-dying.Barrier()
 }
 
-func loop(wg *sync.WaitGroup, dying *barrier.Barrier) {
+func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 	sig := make(chan os.Signal)
 	signal.Notify(sig, os.Interrupt)
 
@@ -76,12 +91,22 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier) {
 		return fmt.Sprint(baseName, "_", n)
 	}
 
+	var env []string
+	for _, envVar := range options.env.GetAll() {
+		if strings.Contains(envVar, "=") {
+			env = append(env, envVar)
+		} else {
+			env = append(env, fmt.Sprint(envVar, "=", os.Getenv(envVar)))
+		}
+	}
+
 	var liveMutex sync.Mutex
 	var live *Container
 
 	for {
 
 		c := NewContainer(client, getName(), wg, dying)
+		c.Env = env
 
 		wg.Add(1)
 		go func(c *Container) {
