@@ -64,11 +64,17 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Conta
 }
 
 func (c *Container) Build(config UpdateEvent) error {
+	if config.BuildComplete != nil {
+		defer close(config.BuildComplete)
+	}
 
 	var err error
 	bo := docker.BuildImageOptions{}
 	bo.Name = c.Name
-	bo.OutputStream = os.Stderr
+	bo.OutputStream = config.OutputStream
+	if bo.OutputStream == nil {
+		bo.OutputStream = os.Stderr
+	}
 
 	switch config.Source.Type {
 	case BuildCwd:

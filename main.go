@@ -41,6 +41,8 @@ type Options struct {
 
 type UpdateEvent struct {
 	Source        ContainerSource
+	OutputStream  io.Writer
+	BuildComplete chan<- struct{}
 }
 
 func main() {
