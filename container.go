@@ -82,6 +82,8 @@ func (c *Container) Build(config UpdateEvent) error {
 		if err != nil {
 			return err
 		}
+	case BuildTarballContent:
+		bo.InputStream = config.Source.buildTarballContent
 	default:
 		return fmt.Errorf("Unimplemented ContainerSource: %v", config.Source.Type)
 	}

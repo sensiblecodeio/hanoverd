@@ -112,6 +112,11 @@ func httpInterface(events chan<- UpdateEvent) {
 		}
 
 		switch r.Method {
+		case "POST":
+			event.Source = ContainerSource{
+				Type:                BuildTarballContent,
+				buildTarballContent: r.Body,
+			}
 		default:
 			fmt.Fprintln(w, "Signal build $PWD")
 		}
