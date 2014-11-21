@@ -68,6 +68,18 @@ func main() {
 	<-dying.Barrier()
 }
 
+func makeEnv(opt opts.ListOpts) []string {
+	var env []string
+	for _, envVar := range opt.GetAll() {
+		if strings.Contains(envVar, "=") {
+			env = append(env, envVar)
+		} else {
+			env = append(env, fmt.Sprint(envVar, "=", os.Getenv(envVar)))
+		}
+	}
+	return env
+}
+
 func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 	sig := make(chan os.Signal)
 	signal.Notify(sig, os.Interrupt)
@@ -91,14 +103,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 		return fmt.Sprint(baseName, "_", n)
 	}
 
-	var env []string
-	for _, envVar := range options.env.GetAll() {
-		if strings.Contains(envVar, "=") {
-			env = append(env, envVar)
-		} else {
-			env = append(env, fmt.Sprint(envVar, "=", os.Getenv(envVar)))
-		}
-	}
+	env := makeEnv(options.env)
 
 	var liveMutex sync.Mutex
 	var live *Container
