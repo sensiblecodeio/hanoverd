@@ -82,6 +82,7 @@ func main() {
 	}()
 
 	go loop(&wg, &dying, options, events)
+	go httpInterface(events)
 
 	<-dying.Barrier()
 }
@@ -98,8 +99,15 @@ func makeEnv(opt opts.ListOpts) []string {
 	return env
 }
 
-func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-chan UpdateEvent) {
+func httpInterface(events chan<- UpdateEvent) {
+	http.HandleFunc("/update", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Signal update")
+		events <- UpdateEvent{}
+	})
+	http.ListenAndServe("localhost:9123", nil)
+}
 
+func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-chan UpdateEvent) {
 	docker_host := os.Getenv("DOCKER_HOST")
 	if docker_host == "" {
 		docker_host = "unix:///run/docker.sock"
