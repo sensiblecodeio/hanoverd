@@ -50,13 +50,28 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup, dying 
 
 func (c *Container) Build() error {
 	var err error
-	bo := docker.BuildImageOptions{}
+
+	done := make(chan struct{})
+	defer close(done)
+	cancel := make(chan struct{})
+	go func() {
+		defer close(cancel)
+		select {
+		case <-c.Closing.Barrier():
+		case <-done:
+		}
+	}()
+
+	bo := docker.BuildImageOptions{
+		Cancel: cancel,
+	}
 	bo.ContextDir, err = os.Getwd()
 	if err != nil {
 		return err
 	}
 	bo.OutputStream = os.Stderr
 	bo.Name = c.Name
+
 	return c.client.BuildImage(bo)
 }
 
