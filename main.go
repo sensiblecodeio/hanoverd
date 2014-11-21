@@ -105,7 +105,6 @@ func httpInterface(events chan<- UpdateEvent) {
 	http.HandleFunc("/update", func(w http.ResponseWriter, r *http.Request) {
 
 		buildComplete := make(chan struct{})
-		defer func() { <-buildComplete }()
 		event := UpdateEvent{
 			OutputStream:  NewFlushWriter(w),
 			BuildComplete: buildComplete,
@@ -113,15 +112,42 @@ func httpInterface(events chan<- UpdateEvent) {
 
 		switch r.Method {
 		case "POST":
+			var (
+				reader io.Reader
+				err    error
+			)
+
+			switch r.Header.Get("Content-Type") {
+			default:
+				// io.Copy(dst, src)
+				// r.Body.Close()
+				const msg = "Unrecognized Content-Type. Should be application/zip or application/x-tar (or x-bzip2 or gzip)"
+				http.Error(w, msg, http.StatusBadRequest)
+				return
+			case "application/zip":
+				reader, err = zip2tar(r.Body)
+				if err != nil {
+					const msg = "Problem whilst reading zip input"
+					http.Error(w, msg, http.StatusBadRequest)
+					return
+				}
+
+			case "application/x-bzip2", "application/x-tar":
+				reader = r.Body
+			}
+
 			event.Source = ContainerSource{
 				Type:                BuildTarballContent,
-				buildTarballContent: r.Body,
+				buildTarballContent: reader,
 			}
 		default:
 			fmt.Fprintln(w, "Signal build $PWD")
 		}
 
 		events <- event
+		// Only wait on buildComplete when we know we got as far as requesting
+		// the build.
+		<-buildComplete
 	})
 	http.ListenAndServe("localhost:9123", nil)
 }
