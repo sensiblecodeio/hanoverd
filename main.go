@@ -40,7 +40,7 @@ type Options struct {
 }
 
 type UpdateEvent struct {
-	Source ContainerSource
+	Source        ContainerSource
 }
 
 func main() {
@@ -179,7 +179,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 				}
 			}()
 
-			status, err := c.Run(lastEvent.Source)
+			status, err := c.Run(lastEvent)
 			if err != nil {
 				log.Println("Container run failed:", strings.TrimSpace(err.Error()))
 				c.Failed.Fall()

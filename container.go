@@ -63,20 +63,21 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Conta
 	return c
 }
 
-func (c *Container) Build(src ContainerSource) error {
+func (c *Container) Build(config UpdateEvent) error {
+
 	var err error
 	bo := docker.BuildImageOptions{}
 	bo.Name = c.Name
 	bo.OutputStream = os.Stderr
 
-	switch src.Type {
+	switch config.Source.Type {
 	case BuildCwd:
 		bo.ContextDir, err = os.Getwd()
 		if err != nil {
 			return err
 		}
 	default:
-		return fmt.Errorf("Unimplemented ContainerSource: %v", src.Type)
+		return fmt.Errorf("Unimplemented ContainerSource: %v", config.Source.Type)
 	}
 
 	return c.client.BuildImage(bo)
@@ -172,11 +173,11 @@ func (c *Container) err(err error) {
 	c.Closing.Fall()
 }
 
-func (c *Container) Run(src ContainerSource) (int, error) {
+func (c *Container) Run(event UpdateEvent) (int, error) {
 
 	defer close(c.errorsW)
 
-	err := c.Build(src)
+	err := c.Build(event)
 	if err != nil {
 		return -2, err
 	}
