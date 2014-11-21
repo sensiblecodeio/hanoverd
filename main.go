@@ -39,6 +39,10 @@ type Options struct {
 	env, publish opts.ListOpts
 }
 
+type UpdateEvent struct {
+	Source ContainerSource
+}
+
 func main() {
 
 	options := Options{
@@ -65,7 +69,19 @@ func main() {
 		_, _ = io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
-	go loop(&wg, &dying, options)
+	events := make(chan UpdateEvent)
+
+	// SIGINT handler
+	go func() {
+		sig := make(chan os.Signal)
+		signal.Notify(sig, os.Interrupt)
+		for _ = range sig {
+			// For now, SIGINT always means build the working dir.
+			events <- UpdateEvent{Source: ContainerSource{Type: BuildCwd}}
+		}
+	}()
+
+	go loop(&wg, &dying, options, events)
 
 	<-dying.Barrier()
 }
@@ -82,9 +98,7 @@ func makeEnv(opt opts.ListOpts) []string {
 	return env
 }
 
-func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
-	sig := make(chan os.Signal)
-	signal.Notify(sig, os.Interrupt)
+func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-chan UpdateEvent) {
 
 	docker_host := os.Getenv("DOCKER_HOST")
 	if docker_host == "" {
@@ -134,6 +148,8 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 	var liveMutex sync.Mutex
 	var live *Container
 
+	lastEvent := UpdateEvent{Source: ContainerSource{Type: BuildCwd}}
+
 	for {
 
 		c := NewContainer(client, getName(), wg)
@@ -155,7 +171,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 				}
 			}()
 
-			status, err := c.Run()
+			status, err := c.Run(lastEvent.Source)
 			if err != nil {
 				log.Println("Container run failed:", strings.TrimSpace(err.Error()))
 				c.Failed.Fall()
@@ -217,7 +233,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 			}()
 		}(c)
 
-		<-sig
+		lastEvent = <-events
 
 		c.Superceded.Fall()
 
