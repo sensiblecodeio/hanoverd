@@ -112,8 +112,11 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 
 	for {
 
-		c := NewContainer(client, getName(), wg, dying)
+		c := NewContainer(client, getName(), wg)
 		c.Env = env
+
+		// Global exit should cause container exit
+		dying.Forward(&c.Closing)
 
 		wg.Add(1)
 		go func(c *Container) {
@@ -122,6 +125,9 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 			go func() {
 				for err := range c.Errors {
 					log.Println("BUG: Async container error:", err)
+					// TODO(pwaller): If this case is hit we might not want to
+					// tear the container down really.
+					c.Failed.Fall()
 				}
 			}()
 

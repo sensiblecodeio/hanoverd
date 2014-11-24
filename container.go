@@ -27,7 +27,7 @@ type Container struct {
 	errorsW chan<- error
 }
 
-func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup, dying *barrier.Barrier) *Container {
+func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Container {
 
 	errors := make(chan error)
 
@@ -39,12 +39,8 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup, dying 
 		errorsW: errors,
 	}
 
-	// :TODO(drj,pwaller): refactor to put this forwarding idiom on the barrier.
-	go func() {
-		// Listen for close, and then kill the container
-		<-dying.Barrier()
-		c.Closing.Fall()
-	}()
+	// If the container fails we should assume it should be torn down.
+	c.Failed.Forward(&c.Closing)
 
 	return c
 }
