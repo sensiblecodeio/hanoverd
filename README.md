@@ -46,6 +46,13 @@ Then launch it (in a directory with a Dockerfile!):
 
 $ ./hanoverd
 
+Environment variables which the docker client (and boot2docker) use
+can be set first.
+
+  DOCKER\_CERT\_PATH
+  DOCKER\_HOST
+  DOCKER\_TLS\_VERIFY
+
 ## Method
 
 * Hanoverd is responsible for listening on externally visible sockets and
