@@ -35,6 +35,17 @@ PATH=.:$PATH hanoverd
 * If the new version fails to accept any connection, the old version will chug
   along happily until a new request comes in to start a new application version.
 
+## Building and running
+
+First build it:
+
+$ go get -v
+$ go build -v
+
+Then launch it (in a directory with a Dockerfile!):
+
+$ ./hanoverd
+
 ## Method
 
 * Hanoverd is responsible for listening on externally visible sockets and
