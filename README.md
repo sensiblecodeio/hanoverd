@@ -35,6 +35,24 @@ PATH=.:$PATH hanoverd
 * If the new version fails to accept any connection, the old version will chug
   along happily until a new request comes in to start a new application version.
 
+## Building and running
+
+First build it:
+
+$ go get -v
+$ go build -v
+
+Then launch it (in a directory with a Dockerfile!):
+
+$ ./hanoverd
+
+Environment variables which the docker client (and boot2docker) use
+can be set first.
+
+  DOCKER\_CERT\_PATH
+  DOCKER\_HOST
+  DOCKER\_TLS\_VERIFY
+
 ## Method
 
 * Hanoverd is responsible for listening on externally visible sockets and
