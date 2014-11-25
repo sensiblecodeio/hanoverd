@@ -132,7 +132,7 @@ func (c *Container) Start() error {
 			ID: c.container.ID,
 		})
 		if err != nil {
-			log.Println("killing container", c.container.ID, err)
+			log.Println("Killing container failed:", c.container.ID, err)
 		}
 	}()
 	return nil

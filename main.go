@@ -89,7 +89,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 	client, err := docker.NewClient("unix:///run/docker.sock")
 	if err != nil {
 		dying.Fall()
-		log.Println(err)
+		log.Println("Connecting to Docker failed:", err)
 		return
 	}
 
@@ -133,7 +133,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 
 			status, err := c.Run()
 			if err != nil {
-				log.Println(err)
+				log.Println("Container run failed:", strings.TrimSpace(err.Error()))
 				c.Failed.Fall()
 				return
 			}
@@ -173,6 +173,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 			remove, err := ConfigureRedirect(5555, target)
 			if err != nil {
 				// Firewall rule didn't get applied.
+				log.Println("Firewall rule application failed:", err)
 				wg.Done()
 				c.err(err)
 				return
