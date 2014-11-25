@@ -39,6 +39,12 @@ type Options struct {
 	env, publish opts.ListOpts
 }
 
+type UpdateEvent struct {
+	Source        ContainerSource
+	OutputStream  io.Writer
+	BuildComplete chan<- struct{}
+}
+
 func main() {
 
 	options := Options{
@@ -65,7 +71,20 @@ func main() {
 		_, _ = io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
-	go loop(&wg, &dying, options)
+	events := make(chan UpdateEvent)
+
+	// SIGINT handler
+	go func() {
+		sig := make(chan os.Signal)
+		signal.Notify(sig, os.Interrupt)
+		for _ = range sig {
+			// For now, SIGINT always means build the working dir.
+			events <- UpdateEvent{Source: ContainerSource{Type: BuildCwd}}
+		}
+	}()
+
+	go loop(&wg, &dying, options, events)
+	go httpInterface(events)
 
 	<-dying.Barrier()
 }
@@ -82,10 +101,58 @@ func makeEnv(opt opts.ListOpts) []string {
 	return env
 }
 
-func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
-	sig := make(chan os.Signal)
-	signal.Notify(sig, os.Interrupt)
+func httpInterface(events chan<- UpdateEvent) {
+	http.HandleFunc("/update", func(w http.ResponseWriter, r *http.Request) {
 
+		buildComplete := make(chan struct{})
+		event := UpdateEvent{
+			OutputStream:  NewFlushWriter(w),
+			BuildComplete: buildComplete,
+		}
+
+		switch r.Method {
+		case "POST":
+			var (
+				reader io.Reader
+				err    error
+			)
+
+			switch r.Header.Get("Content-Type") {
+			default:
+				// io.Copy(dst, src)
+				// r.Body.Close()
+				const msg = "Unrecognized Content-Type. Should be application/zip or application/x-tar (or x-bzip2 or gzip)"
+				http.Error(w, msg, http.StatusBadRequest)
+				return
+			case "application/zip":
+				reader, err = zip2tar(r.Body)
+				if err != nil {
+					const msg = "Problem whilst reading zip input"
+					http.Error(w, msg, http.StatusBadRequest)
+					return
+				}
+
+			case "application/x-bzip2", "application/x-tar":
+				reader = r.Body
+			}
+
+			event.Source = ContainerSource{
+				Type:                BuildTarballContent,
+				buildTarballContent: reader,
+			}
+		default:
+			fmt.Fprintln(w, "Signal build $PWD")
+		}
+
+		events <- event
+		// Only wait on buildComplete when we know we got as far as requesting
+		// the build.
+		<-buildComplete
+	})
+	http.ListenAndServe("localhost:9123", nil)
+}
+
+func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-chan UpdateEvent) {
 	docker_host := os.Getenv("DOCKER_HOST")
 	if docker_host == "" {
 		docker_host = "unix:///run/docker.sock"
@@ -134,6 +201,8 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 	var liveMutex sync.Mutex
 	var live *Container
 
+	lastEvent := UpdateEvent{Source: ContainerSource{Type: BuildCwd}}
+
 	for {
 
 		c := NewContainer(client, getName(), wg)
@@ -155,7 +224,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 				}
 			}()
 
-			status, err := c.Run()
+			status, err := c.Run(lastEvent)
 			if err != nil {
 				log.Println("Container run failed:", strings.TrimSpace(err.Error()))
 				c.Failed.Fall()
@@ -217,7 +286,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options) {
 			}()
 		}(c)
 
-		<-sig
+		lastEvent = <-events
 
 		c.Superceded.Fall()
 

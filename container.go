@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -27,6 +28,23 @@ type Container struct {
 	errorsW chan<- error
 }
 
+type SourceType int
+
+const (
+	// Run build with current directory with context
+	BuildCwd            SourceType = iota
+	BuildTarballContent            // Build with specified io.Reader as context
+	BuildTarballURL                // Build with specified remote URL as context
+	DockerPull                     // Run a docker pull to obtain the image
+)
+
+type ContainerSource struct {
+	Type                SourceType
+	buildTarballContent io.Reader
+	buildTarballURL     string
+	dockerImageName     string
+}
+
 func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Container {
 
 	errors := make(chan error)
@@ -45,15 +63,31 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Conta
 	return c
 }
 
-func (c *Container) Build() error {
+func (c *Container) Build(config UpdateEvent) error {
+	if config.BuildComplete != nil {
+		defer close(config.BuildComplete)
+	}
+
 	var err error
 	bo := docker.BuildImageOptions{}
-	bo.ContextDir, err = os.Getwd()
-	if err != nil {
-		return err
-	}
-	bo.OutputStream = os.Stderr
 	bo.Name = c.Name
+	bo.OutputStream = config.OutputStream
+	if bo.OutputStream == nil {
+		bo.OutputStream = os.Stderr
+	}
+
+	switch config.Source.Type {
+	case BuildCwd:
+		bo.ContextDir, err = os.Getwd()
+		if err != nil {
+			return err
+		}
+	case BuildTarballContent:
+		bo.InputStream = config.Source.buildTarballContent
+	default:
+		return fmt.Errorf("Unimplemented ContainerSource: %v", config.Source.Type)
+	}
+
 	return c.client.BuildImage(bo)
 }
 
@@ -147,11 +181,11 @@ func (c *Container) err(err error) {
 	c.Closing.Fall()
 }
 
-func (c *Container) Run() (int, error) {
+func (c *Container) Run(event UpdateEvent) (int, error) {
 
 	defer close(c.errorsW)
 
-	err := c.Build()
+	err := c.Build(event)
 	if err != nil {
 		return -2, err
 	}
