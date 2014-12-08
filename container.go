@@ -45,6 +45,8 @@ type ContainerSource struct {
 	dockerImageName     string
 }
 
+// Construct a *Container. When the `wg` WaitGroup is zero, there is nothing
+// outstanding (such as firewall rules which need garbage collecting).
 func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Container {
 
 	errors := make(chan error)
@@ -63,6 +65,8 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Conta
 	return c
 }
 
+// Generate a docker image. This can be done through various mechanisms in
+// response to an UpdateEvent (see SourceType constant declarations).
 func (c *Container) Build(config UpdateEvent) error {
 	if config.BuildComplete != nil {
 		defer close(config.BuildComplete)
@@ -91,6 +95,7 @@ func (c *Container) Build(config UpdateEvent) error {
 	return c.client.BuildImage(bo)
 }
 
+// `docker create` the container.
 func (c *Container) Create() error {
 	opts := docker.CreateContainerOptions{
 		Name: c.Name,
@@ -127,6 +132,7 @@ func (c *Container) CopyOutput() error {
 }
 
 // :todo(drj): May want to return errors for truly broken containers (timeout).
+// Poll for the program inside the container being ready to accept connections
 func (c *Container) AwaitListening() {
 
 	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
@@ -142,6 +148,7 @@ func (c *Container) AwaitListening() {
 	c.Ready.Fall()
 }
 
+// Start the container (and notify it if c.Closing falls)
 func (c *Container) Start() error {
 	hc := &docker.HostConfig{
 		PublishAllPorts: true,
@@ -157,6 +164,8 @@ func (c *Container) Start() error {
 		return err
 	}
 
+	// Listen on the Closing barrier and send a kill to the container if it
+	// falls.
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
@@ -172,15 +181,19 @@ func (c *Container) Start() error {
 	return nil
 }
 
+// Wait until container exits
 func (c *Container) Wait() (int, error) {
 	return c.client.WaitContainer(c.container.ID)
 }
 
+// Internal function for raising an error.
 func (c *Container) err(err error) {
 	c.errorsW <- err
 	c.Closing.Fall()
 }
 
+// Manage the whole lifecycle of the container in response to a request to
+// start it.
 func (c *Container) Run(event UpdateEvent) (int, error) {
 
 	defer close(c.errorsW)

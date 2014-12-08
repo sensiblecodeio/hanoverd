@@ -89,6 +89,7 @@ func main() {
 	<-dying.Barrier()
 }
 
+// Make an env []string from a list of options specified on the cmdline.
 func makeEnv(opt opts.ListOpts) []string {
 	var env []string
 	for _, envVar := range opt.GetAll() {
@@ -119,8 +120,6 @@ func httpInterface(events chan<- UpdateEvent) {
 
 			switch r.Header.Get("Content-Type") {
 			default:
-				// io.Copy(dst, src)
-				// r.Body.Close()
 				const msg = "Unrecognized Content-Type. Should be application/zip or application/x-tar (or x-bzip2 or gzip)"
 				http.Error(w, msg, http.StatusBadRequest)
 				return
@@ -152,6 +151,7 @@ func httpInterface(events chan<- UpdateEvent) {
 	http.ListenAndServe("localhost:9123", nil)
 }
 
+// Main loop managing the lifecycle of all containers.
 func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-chan UpdateEvent) {
 	docker_host := os.Getenv("DOCKER_HOST")
 	if docker_host == "" {

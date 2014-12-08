@@ -5,6 +5,7 @@ import (
 	"net/http"
 )
 
+// An io.Writer which wraps a http.ResponseWriter so that every write flushes.
 type flushWriter struct {
 	f http.Flusher
 	w io.Writer
