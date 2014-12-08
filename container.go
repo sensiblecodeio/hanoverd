@@ -165,7 +165,14 @@ func (c *Container) Start() error {
 		err := c.client.KillContainer(docker.KillContainerOptions{
 			ID: c.container.ID,
 		})
-		if err != nil {
+		if err == nil {
+			return
+		}
+		switch err := err.(type) {
+		case *docker.NoSuchContainer:
+			// The container already went away, who cares.
+			return
+		default:
 			log.Println("Killing container failed:", c.container.ID, err)
 		}
 	}()
