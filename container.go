@@ -228,9 +228,12 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 }
 
 func (c *Container) Delete() {
-	c.client.RemoveContainer(docker.RemoveContainerOptions{
+	err := c.client.RemoveContainer(docker.RemoveContainerOptions{
 		ID:            c.container.ID,
 		RemoveVolumes: true,
 		Force:         true,
 	})
+	if err != nil {
+		log.Println("Warn: failed to delete container:", err)
+	}
 }
