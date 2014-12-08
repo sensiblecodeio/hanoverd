@@ -190,6 +190,7 @@ func (c *Container) err(err error) {
 
 func (c *Container) Run(event UpdateEvent) (int, error) {
 
+	defer c.Closing.Fall()
 	defer close(c.errorsW)
 
 	err := c.Build(event)
