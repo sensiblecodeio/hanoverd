@@ -155,8 +155,7 @@ func httpInterface(events chan<- UpdateEvent) {
 	http.ListenAndServe("localhost:9123", nil)
 }
 
-// Main loop managing the lifecycle of all containers.
-func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-chan UpdateEvent) {
+func dockerConnect() (*docker.Client, error) {
 	docker_host := os.Getenv("DOCKER_HOST")
 	if docker_host == "" {
 		docker_host = "unix:///run/docker.sock"
@@ -182,6 +181,12 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 	} else {
 		client, err = docker.NewClient(docker_host)
 	}
+	return client, err
+}
+
+// Main loop managing the lifecycle of all containers.
+func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-chan UpdateEvent) {
+	client, err := dockerConnect()
 	if err != nil {
 		dying.Fall()
 		log.Println("Connecting to Docker failed:", err)
