@@ -56,6 +56,10 @@ func main() {
 
 	mflag.Parse()
 
+	if err := CheckIPTables(); err != nil {
+		log.Fatal("Unable to run `iptables -L`, see README (", err, ")")
+	}
+
 	log.Println("Hanoverd")
 
 	var wg sync.WaitGroup
