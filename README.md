@@ -3,7 +3,7 @@
 Hanoverd - The docker handover daemon
 -------------------------------------
 
-Hanoverd ("Hanover-Dee") is responsible for managing seemless transitions from
+Hanoverd ("Hanover-Dee") is responsible for managing seamless transitions from
 one application version to another with Docker containers.
 
 ## Installation
@@ -39,12 +39,16 @@ PATH=.:$PATH hanoverd
 
 First build it:
 
+```
 $ go get -v
 $ go build -v
+```
 
 Then launch it (in a directory with a Dockerfile!):
 
+```
 $ ./hanoverd
+```
 
 Environment variables which the docker client (and boot2docker) use
 can be set first.
