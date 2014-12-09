@@ -251,7 +251,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 				c.Failed.Fall()
 				return
 			}
-			log.Println(c.Name, "exit:", status)
+			log.Println("container", c.Name, "quit, exit status:", status)
 		}(c)
 
 		go func(c *Container) {
@@ -268,7 +268,6 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 				return
 			case <-c.Closing.Barrier():
 				log.Println("Container closed before going live:", c.Name)
-				log.Println("(This should never happen?)")
 				return
 
 			case <-c.Ready.Barrier():
