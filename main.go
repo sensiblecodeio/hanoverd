@@ -87,7 +87,9 @@ func main() {
 		_, _ = io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
-	events := make(chan UpdateEvent)
+	events := make(chan UpdateEvent, 1)
+	originalEvent := UpdateEvent{Source: options.source}
+	events <- originalEvent
 
 	// SIGINT handler
 	go func() {
@@ -95,7 +97,7 @@ func main() {
 		signal.Notify(sig, os.Interrupt)
 		for _ = range sig {
 			// For now, SIGINT always means build the working dir.
-			events <- UpdateEvent{Source: ContainerSource{Type: BuildCwd}}
+			events <- originalEvent
 		}
 	}()
 
@@ -222,7 +224,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 	var liveMutex sync.Mutex
 	var live *Container
 
-	lastEvent := UpdateEvent{Source: options.source}
+	lastEvent := <-events
 
 	for {
 
