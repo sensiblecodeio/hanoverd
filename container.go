@@ -95,6 +95,26 @@ func (c *Container) Build(config UpdateEvent) error {
 	return c.client.BuildImage(bo)
 }
 
+// Pull an image from a docker repository.
+func (c *Container) Pull(config UpdateEvent) error {
+	if config.BuildComplete != nil {
+		defer close(config.BuildComplete)
+	}
+
+	pio := docker.PullImageOptions{}
+	pio.Repository = config.Source.dockerImageName
+	pio.Registry = ""
+	pio.Tag = "latest"
+	pio.OutputStream = config.OutputStream
+	if pio.OutputStream == nil {
+		pio.OutputStream = os.Stderr
+	}
+	pio.RawJSONStream = false
+
+	return c.client.PullImage(pio, docker.AuthConfiguration{})
+}
+
+
 // `docker create` the container.
 func (c *Container) Create() error {
 	opts := docker.CreateContainerOptions{
@@ -213,12 +233,20 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 	defer c.Closing.Fall()
 	defer close(c.errorsW)
 
-	err := c.Build(event)
-	if err != nil {
-		return -2, err
+	switch event.Source.Type {
+	case DockerPull:
+		err := c.Pull(event)
+		if err != nil {
+			return -2, err
+		}
+	case BuildTarballContent, BuildCwd:
+		err := c.Build(event)
+		if err != nil {
+			return -2, err
+		}
 	}
 
-	err = c.Create()
+	err := c.Create()
 	if err != nil {
 		return -1, err
 	}

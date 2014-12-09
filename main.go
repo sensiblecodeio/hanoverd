@@ -37,6 +37,7 @@ func DockerErrorStatus(err error) int {
 
 type Options struct {
 	env, publish opts.ListOpts
+	source ContainerSource
 }
 
 type UpdateEvent struct {
@@ -55,6 +56,17 @@ func main() {
 	mflag.Var(&options.publish, []string{"p", "-publish"}, "Publish a container's port to the host")
 
 	mflag.Parse()
+
+	l := len(mflag.Args())
+	switch {
+	case l == 0:
+		options.source.Type = BuildCwd
+	case l == 1:
+		options.source.Type = DockerPull
+		options.source.dockerImageName = mflag.Arg(0)
+	case l > 1:
+		log.Fatal("Expected 0 or 1 command line parameters")
+	}
 
 	if err := CheckIPTables(); err != nil {
 		log.Fatal("Unable to run `iptables -L`, see README (", err, ")")
@@ -210,7 +222,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 	var liveMutex sync.Mutex
 	var live *Container
 
-	lastEvent := UpdateEvent{Source: ContainerSource{Type: BuildCwd}}
+	lastEvent := UpdateEvent{Source: options.source}
 
 	for {
 
