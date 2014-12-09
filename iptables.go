@@ -20,6 +20,10 @@ const (
 	DELETE        = false
 )
 
+func CheckIPTables() error {
+	return exec.Command("iptables", "-L").Run()
+}
+
 // Invoke one iptables command.
 // Expects "iptables" in the path to be runnable with reasonable permissions.
 func iptables(action Action, chain string, source, target int64) *exec.Cmd {
