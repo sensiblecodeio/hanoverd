@@ -137,8 +137,12 @@ func (c *Container) Create() error {
 // CopyOutput copies the output of the container to `w` and blocks until
 // completion
 func (c *Container) CopyOutput() error {
+	log.Print("CopyOutput running")
+	defer log.Println("CopyOutput finished")
+
 	// TODO(pwaller): at some point move this on to 'c' for configurability?
-	w := os.Stderr
+	w := os.Stdout
+	io.WriteString(w, "hello, world")
 	// Blocks until stream closed
 	return c.client.AttachToContainer(docker.AttachToContainerOptions{
 		Container:    c.container.ID,
@@ -256,6 +260,7 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 	go func() {
 		defer c.wg.Done()
 		err := c.CopyOutput()
+		log.Println("func CopyOutput error", err)
 		if err != nil {
 			c.err(err)
 		}
