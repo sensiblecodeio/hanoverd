@@ -12,7 +12,9 @@ import (
 	"os"
 )
 
-// Converts a reader of a zip file into a reader of a tar file
+// Converts a reader of a zip file into a reader of a tar file.
+// Note: reads whole zip file into a buffer, which is unavoidable for the
+// moment due to the implementation of zip.Reader.
 func zip2tar(in io.Reader) (io.Reader, error) {
 
 	// Read the whole input into a buffer

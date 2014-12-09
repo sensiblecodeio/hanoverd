@@ -20,6 +20,8 @@ const (
 	DELETE        = false
 )
 
+// Invoke one iptables command.
+// Expects "iptables" in the path to be runnable with reasonable permissions.
 func iptables(action Action, chain string, source, target int64) *exec.Cmd {
 	switch action {
 	case INSERT:
@@ -38,6 +40,8 @@ func iptables(action Action, chain string, source, target int64) *exec.Cmd {
 	panic("unreachable")
 }
 
+// Configure one port redirect from `source` to `target` using iptables.
+// Returns an error and a function which undoes the change to the firewall.
 func ConfigureRedirect(source, target int64) (func(), error) {
 
 	err := iptables(INSERT, "PREROUTING", source, target).Run()
