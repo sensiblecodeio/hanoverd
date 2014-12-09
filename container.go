@@ -143,9 +143,16 @@ func (c *Container) AwaitListening() {
 				break
 			}
 			time.Sleep(50 * time.Millisecond)
+
+			select {
+			case <-c.Closing.Barrier():
+				// If the container has closed, cease waiting
+				return
+			default:
+			}
 		}
 	}
-	c.Ready.Fall()
+
 }
 
 // Start the container (and notify it if c.Closing falls)
