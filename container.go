@@ -181,7 +181,14 @@ func (c *Container) Start() error {
 		err := c.client.KillContainer(docker.KillContainerOptions{
 			ID: c.container.ID,
 		})
-		if err != nil {
+		if err == nil {
+			return
+		}
+		switch err := err.(type) {
+		case *docker.NoSuchContainer:
+			// The container already went away, who cares.
+			return
+		default:
 			log.Println("Killing container failed:", c.container.ID, err)
 		}
 	}()
@@ -203,6 +210,7 @@ func (c *Container) err(err error) {
 // start it.
 func (c *Container) Run(event UpdateEvent) (int, error) {
 
+	defer c.Closing.Fall()
 	defer close(c.errorsW)
 
 	err := c.Build(event)
@@ -240,9 +248,12 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 }
 
 func (c *Container) Delete() {
-	c.client.RemoveContainer(docker.RemoveContainerOptions{
+	err := c.client.RemoveContainer(docker.RemoveContainerOptions{
 		ID:            c.container.ID,
 		RemoveVolumes: true,
 		Force:         true,
 	})
+	if err != nil {
+		log.Println("Warn: failed to delete container:", err)
+	}
 }
