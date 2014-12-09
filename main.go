@@ -37,7 +37,7 @@ func DockerErrorStatus(err error) int {
 
 type Options struct {
 	env, publish opts.ListOpts
-	source ContainerSource
+	source       ContainerSource
 }
 
 type UpdateEvent struct {

@@ -114,18 +114,23 @@ func (c *Container) Pull(config UpdateEvent) error {
 	return c.client.PullImage(pio, docker.AuthConfiguration{})
 }
 
-
 // `docker create` the container.
-func (c *Container) Create() error {
+func (c *Container) Create(source ContainerSource) error {
 	opts := docker.CreateContainerOptions{
 		Name: c.Name,
 		Config: &docker.Config{
 			Hostname:     c.Name,
-			Image:        c.Name,
 			AttachStdout: true,
 			AttachStderr: true,
 			Env:          c.Env,
 		},
+	}
+
+	switch source.Type {
+	case DockerPull:
+		opts.Config.Image = source.dockerImageName
+	case BuildCwd, BuildTarballContent:
+		opts.Config.Image = c.Name
 	}
 
 	var err error
@@ -137,12 +142,9 @@ func (c *Container) Create() error {
 // CopyOutput copies the output of the container to `w` and blocks until
 // completion
 func (c *Container) CopyOutput() error {
-	log.Print("CopyOutput running")
-	defer log.Println("CopyOutput finished")
 
 	// TODO(pwaller): at some point move this on to 'c' for configurability?
-	w := os.Stdout
-	io.WriteString(w, "hello, world")
+	w := os.Stderr
 	// Blocks until stream closed
 	return c.client.AttachToContainer(docker.AttachToContainerOptions{
 		Container:    c.container.ID,
@@ -250,7 +252,7 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 		}
 	}
 
-	err := c.Create()
+	err := c.Create(event.Source)
 	if err != nil {
 		return -1, err
 	}
@@ -260,7 +262,6 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 	go func() {
 		defer c.wg.Done()
 		err := c.CopyOutput()
-		log.Println("func CopyOutput error", err)
 		if err != nil {
 			c.err(err)
 		}
