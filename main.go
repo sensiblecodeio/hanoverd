@@ -37,6 +37,7 @@ func DockerErrorStatus(err error) int {
 
 type Options struct {
 	env, publish opts.ListOpts
+	source       ContainerSource
 }
 
 type UpdateEvent struct {
@@ -55,6 +56,17 @@ func main() {
 	mflag.Var(&options.publish, []string{"p", "-publish"}, "Publish a container's port to the host")
 
 	mflag.Parse()
+
+	l := len(mflag.Args())
+	switch {
+	case l == 0:
+		options.source.Type = BuildCwd
+	case l == 1:
+		options.source.Type = DockerPull
+		options.source.dockerImageName = mflag.Arg(0)
+	case l > 1:
+		log.Fatal("Expected 0 or 1 command line parameters")
+	}
 
 	if err := CheckIPTables(); err != nil {
 		log.Fatal("Unable to run `iptables -L`, see README (", err, ")")
@@ -75,7 +87,9 @@ func main() {
 		_, _ = io.Copy(ioutil.Discard, os.Stdin)
 	}()
 
-	events := make(chan UpdateEvent)
+	events := make(chan UpdateEvent, 1)
+	originalEvent := UpdateEvent{Source: options.source}
+	events <- originalEvent
 
 	// SIGINT handler
 	go func() {
@@ -83,7 +97,7 @@ func main() {
 		signal.Notify(sig, os.Interrupt)
 		for _ = range sig {
 			// For now, SIGINT always means build the working dir.
-			events <- UpdateEvent{Source: ContainerSource{Type: BuildCwd}}
+			events <- originalEvent
 		}
 	}()
 
@@ -210,7 +224,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 	var liveMutex sync.Mutex
 	var live *Container
 
-	lastEvent := UpdateEvent{Source: ContainerSource{Type: BuildCwd}}
+	lastEvent := <-events
 
 	for {
 
@@ -239,7 +253,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 				c.Failed.Fall()
 				return
 			}
-			log.Println(c.Name, "exit:", status)
+			log.Println("container", c.Name, "quit, exit status:", status)
 		}(c)
 
 		go func(c *Container) {
@@ -256,7 +270,6 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 				return
 			case <-c.Closing.Barrier():
 				log.Println("Container closed before going live:", c.Name)
-				log.Println("(This should never happen?)")
 				return
 
 			case <-c.Ready.Barrier():

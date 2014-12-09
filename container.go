@@ -95,17 +95,42 @@ func (c *Container) Build(config UpdateEvent) error {
 	return c.client.BuildImage(bo)
 }
 
+// Pull an image from a docker repository.
+func (c *Container) Pull(config UpdateEvent) error {
+	if config.BuildComplete != nil {
+		defer close(config.BuildComplete)
+	}
+
+	pio := docker.PullImageOptions{}
+	pio.Repository = config.Source.dockerImageName
+	pio.Registry = ""
+	pio.Tag = "latest"
+	pio.OutputStream = config.OutputStream
+	if pio.OutputStream == nil {
+		pio.OutputStream = os.Stderr
+	}
+	pio.RawJSONStream = false
+
+	return c.client.PullImage(pio, docker.AuthConfiguration{})
+}
+
 // `docker create` the container.
-func (c *Container) Create() error {
+func (c *Container) Create(source ContainerSource) error {
 	opts := docker.CreateContainerOptions{
 		Name: c.Name,
 		Config: &docker.Config{
 			Hostname:     c.Name,
-			Image:        c.Name,
 			AttachStdout: true,
 			AttachStderr: true,
 			Env:          c.Env,
 		},
+	}
+
+	switch source.Type {
+	case DockerPull:
+		opts.Config.Image = source.dockerImageName
+	case BuildCwd, BuildTarballContent:
+		opts.Config.Image = c.Name
 	}
 
 	var err error
@@ -117,6 +142,7 @@ func (c *Container) Create() error {
 // CopyOutput copies the output of the container to `w` and blocks until
 // completion
 func (c *Container) CopyOutput() error {
+
 	// TODO(pwaller): at some point move this on to 'c' for configurability?
 	w := os.Stderr
 	// Blocks until stream closed
@@ -213,12 +239,20 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 	defer c.Closing.Fall()
 	defer close(c.errorsW)
 
-	err := c.Build(event)
-	if err != nil {
-		return -2, err
+	switch event.Source.Type {
+	case DockerPull:
+		err := c.Pull(event)
+		if err != nil {
+			return -2, err
+		}
+	case BuildTarballContent, BuildCwd:
+		err := c.Build(event)
+		if err != nil {
+			return -2, err
+		}
 	}
 
-	err = c.Create()
+	err := c.Create(event.Source)
 	if err != nil {
 		return -1, err
 	}
