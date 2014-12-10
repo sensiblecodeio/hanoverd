@@ -265,6 +265,17 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 
 			status, err := c.Run(lastEvent)
 			if err != nil {
+				switch err := err.(type) {
+				case *docker.Error:
+					// (name) Conflict
+					if err.Status == 409 {
+						// retry
+						log.Printf("Container with name %q exists, using a new name...", c.Name)
+						events <- lastEvent
+						c.Failed.Fall()
+						return
+					}
+				}
 				log.Println("Container run failed:", strings.TrimSpace(err.Error()))
 				c.Failed.Fall()
 				return
