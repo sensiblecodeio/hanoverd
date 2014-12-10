@@ -335,7 +335,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 							panic(err)
 						}
 
-						remove, err := ConfigureRedirect(public, internalPort.Int())
+						remove, err := ConfigureRedirect(public, int64(internalPort.Int()))
 						if err != nil {
 							// Firewall rule didn't get applied.
 							c.err(fmt.Errorf("Firewall rule application failed: %q (public: %v, private: %v)", err, public, internalPort))
