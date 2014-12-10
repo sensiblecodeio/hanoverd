@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/docker/docker/nat"
 	"github.com/docker/docker/opts"
 	"github.com/docker/docker/pkg/mflag"
 	"github.com/fsouza/go-dockerclient"
@@ -39,6 +40,8 @@ type Options struct {
 	env, publish  opts.ListOpts
 	source        ContainerSource
 	containerArgs []string
+	ports         nat.PortSet
+	portBindings  nat.PortMap
 }
 
 type UpdateEvent struct {
@@ -48,6 +51,7 @@ type UpdateEvent struct {
 }
 
 func main() {
+	var err error
 
 	options := Options{
 		env:     opts.NewListOpts(nil),
@@ -76,6 +80,11 @@ func main() {
 
 	if err := CheckIPTables(); err != nil {
 		log.Fatal("Unable to run `iptables -L`, see README (", err, ")")
+	}
+
+	options.ports, options.portBindings, err = nat.ParsePortSpecs(options.publish.GetAll())
+	if err != nil {
+		log.Fatalln("--publish:", err)
 	}
 
 	log.Println("Hanoverd")
@@ -288,17 +297,45 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 			defer liveMutex.Unlock()
 			previousLive := live
 
-			// Block main exit until the firewall rule has been removed
+			// Block main exit until the firewall rule has been placed
+			// (and removed)
 			wg.Add(1)
+			defer wg.Done()
 
-			target := c.container.NetworkSettings.PortMappingAPI()[0].PublicPort
-			remove, err := ConfigureRedirect(5555, target)
-			if err != nil {
-				// Firewall rule didn't get applied.
-				log.Println("Firewall rule application failed:", err)
-				wg.Done()
-				c.err(err)
-				return
+			isInternalPort := func(p int) bool {
+				for _, m := range c.container.NetworkSettings.PortMappingAPI() {
+					if m.PrivatePort == int64(p) {
+						return true
+					}
+				}
+				return false
+			}
+
+			removal := []func(){}
+
+			for internalPort, bindings := range options.portBindings {
+				if isInternalPort(internalPort.Int()) {
+					for _, binding := range bindings {
+						var public int64
+						_, err := fmt.Sscan(binding.HostPort, &public)
+						if err != nil {
+							panic(err)
+						}
+
+						target := c.container.NetworkSettings.PortMappingAPI()[0].PublicPort
+						remove, err := ConfigureRedirect(5555, target)
+						if err != nil {
+							// Firewall rule didn't get applied.
+							log.Println("Firewall rule application failed:", err)
+							c.err(err)
+							return
+						}
+
+						removal = append(removal, remove)
+					}
+				} else {
+					log.Println("Not a valid port!", internalPort)
+				}
 			}
 
 			live = c
@@ -306,12 +343,15 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 				previousLive.Closing.Fall()
 			}
 
-			// Networking
+			// Block main exit until firewall rule has been removed
+			wg.Add(1)
 			go func() {
 				defer wg.Done()
 
 				<-c.Closing.Barrier()
-				remove()
+				for _, remove := range removal {
+					remove()
+				}
 			}()
 		}(c)
 
