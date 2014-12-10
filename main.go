@@ -338,15 +338,15 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 						remove, err := ConfigureRedirect(public, internalPort.Int())
 						if err != nil {
 							// Firewall rule didn't get applied.
-							log.Println("Firewall rule application failed:", err)
-							c.err(err)
+							c.err(fmt.Errorf("Firewall rule application failed: %q (public: %v, private: %v)", err, public, internalPort))
 							return
 						}
 
 						removal = append(removal, remove)
 					}
 				} else {
-					log.Println("Not a valid port!", internalPort)
+					c.err(fmt.Errorf("Not a valid port! %v", internalPort))
+					return
 				}
 			}
 
