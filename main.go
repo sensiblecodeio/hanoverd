@@ -36,8 +36,9 @@ func DockerErrorStatus(err error) int {
 }
 
 type Options struct {
-	env, publish opts.ListOpts
-	source       ContainerSource
+	env, publish  opts.ListOpts
+	source        ContainerSource
+	containerArgs []string
 }
 
 type UpdateEvent struct {
@@ -57,15 +58,20 @@ func main() {
 
 	mflag.Parse()
 
-	l := len(mflag.Args())
-	switch {
-	case l == 0:
+	l := mflag.NArg()
+	if l == 0 {
 		options.source.Type = BuildCwd
-	case l == 1:
-		options.source.Type = DockerPull
-		options.source.dockerImageName = mflag.Arg(0)
-	case l > 1:
-		log.Fatal("Expected 0 or 1 command line parameters")
+	} else {
+		args := mflag.Args()
+		// If the first arg is "@", then use the Cwd
+		if args[0] == "@" {
+			options.source.Type = BuildCwd
+		} else {
+			options.source.Type = DockerPull
+			options.source.dockerImageName = args[0]
+		}
+		args = args[1:]
+		options.containerArgs = args
 	}
 
 	if err := CheckIPTables(); err != nil {
@@ -229,6 +235,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 	for {
 
 		c := NewContainer(client, getName(), wg)
+		c.Args = options.containerArgs
 		c.Env = env
 
 		// Global exit should cause container exit
