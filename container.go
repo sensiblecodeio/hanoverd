@@ -159,26 +159,28 @@ func (c *Container) CopyOutput() error {
 
 // :todo(drj): May want to return errors for truly broken containers (timeout).
 // Poll for the program inside the container being ready to accept connections
-func (c *Container) AwaitListening() {
+// Returns `true` for success and `false` for failure.
+func (c *Container) AwaitListening() bool {
 
 	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
 		url := fmt.Sprint("http://", port.IP, ":", port.PublicPort, "/")
 		for {
 			response, err := http.Get(url)
 			if err == nil && response.StatusCode == http.StatusOK {
-				break
+				return true
 			}
 			time.Sleep(50 * time.Millisecond)
 
 			select {
 			case <-c.Closing.Barrier():
 				// If the container has closed, cease waiting
-				return
+				return false
 			default:
 			}
 		}
 	}
 
+	return false
 }
 
 // Start the container (and notify it if c.Closing falls)
@@ -273,7 +275,10 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 	}
 
 	go func() {
-		c.AwaitListening()
+		if !c.AwaitListening() {
+			c.Failed.Fall()
+			return
+		}
 		c.Ready.Fall()
 		log.Println("Listening on", c.container.NetworkSettings.PortMappingAPI())
 	}()
