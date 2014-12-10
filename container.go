@@ -281,7 +281,6 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 			return
 		}
 		c.Ready.Fall()
-		log.Println("Listening on", c.container.NetworkSettings.PortMappingAPI())
 	}()
 
 	return c.Wait()

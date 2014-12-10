@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/docker/docker/nat"
 	"github.com/docker/docker/opts"
 	"github.com/docker/docker/pkg/mflag"
 	"github.com/fsouza/go-dockerclient"
@@ -39,6 +40,8 @@ type Options struct {
 	env, publish  opts.ListOpts
 	source        ContainerSource
 	containerArgs []string
+	ports         nat.PortSet
+	portBindings  nat.PortMap
 }
 
 type UpdateEvent struct {
@@ -48,6 +51,7 @@ type UpdateEvent struct {
 }
 
 func main() {
+	var err error
 
 	options := Options{
 		env:     opts.NewListOpts(nil),
@@ -76,6 +80,11 @@ func main() {
 
 	if err := CheckIPTables(); err != nil {
 		log.Fatal("Unable to run `iptables -L`, see README (", err, ")")
+	}
+
+	options.ports, options.portBindings, err = nat.ParsePortSpecs(options.publish.GetAll())
+	if err != nil {
+		log.Fatalln("--publish:", err)
 	}
 
 	log.Println("Hanoverd")
@@ -205,7 +214,7 @@ func dockerConnect() (*docker.Client, error) {
 }
 
 // Main loop managing the lifecycle of all containers.
-func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-chan UpdateEvent) {
+func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events chan UpdateEvent) {
 	client, err := dockerConnect()
 	if err != nil {
 		dying.Fall()
@@ -256,6 +265,17 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 
 			status, err := c.Run(lastEvent)
 			if err != nil {
+				switch err := err.(type) {
+				case *docker.Error:
+					// (name) Conflict
+					if err.Status == 409 {
+						// retry
+						log.Printf("Container with name %q exists, using a new name...", c.Name)
+						events <- lastEvent
+						c.Failed.Fall()
+						return
+					}
+				}
 				log.Println("Container run failed:", strings.TrimSpace(err.Error()))
 				c.Failed.Fall()
 				return
@@ -288,17 +308,60 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 			defer liveMutex.Unlock()
 			previousLive := live
 
-			// Block main exit until the firewall rule has been removed
+			// Block main exit until the firewall rule has been placed
+			// (and removed)
 			wg.Add(1)
+			defer wg.Done()
 
-			target := c.container.NetworkSettings.PortMappingAPI()[0].PublicPort
-			remove, err := ConfigureRedirect(5555, target)
-			if err != nil {
-				// Firewall rule didn't get applied.
-				log.Println("Firewall rule application failed:", err)
-				wg.Done()
-				c.err(err)
-				return
+			// get the public port for an internal one
+			getMappedPort := func(p int) (int, bool) {
+				for _, m := range c.container.NetworkSettings.PortMappingAPI() {
+					if int(m.PrivatePort) == p {
+						return int(m.PublicPort), true
+					}
+				}
+				return -1, false
+			}
+
+			removal := []func(){}
+
+			defer func() {
+				// Block main exit until firewall rule has been removed
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					<-c.Closing.Barrier()
+					for _, remove := range removal {
+						remove()
+					}
+				}()
+			}()
+
+			for internalPort, bindings := range options.portBindings {
+				if mappedPort, ok := getMappedPort(internalPort.Int()); ok {
+					for _, binding := range bindings {
+						var public int
+						_, err := fmt.Sscan(binding.HostPort, &public)
+						if err != nil {
+							// If no public port specified, use same port as internal port
+							public = internalPort.Int()
+						}
+
+						ipAddress := c.container.NetworkSettings.IPAddress
+						remove, err := ConfigureRedirect(public, mappedPort, ipAddress)
+						if err != nil {
+							// Firewall rule didn't get applied.
+							c.err(fmt.Errorf("Firewall rule application failed: %q (public: %v, private: %v)", err, public, internalPort))
+							return
+						}
+
+						removal = append(removal, remove)
+					}
+				} else {
+					c.err(fmt.Errorf("Docker image not exposing port %v!", internalPort))
+					return
+				}
 			}
 
 			live = c
@@ -306,13 +369,6 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 				previousLive.Closing.Fall()
 			}
 
-			// Networking
-			go func() {
-				defer wg.Done()
-
-				<-c.Closing.Barrier()
-				remove()
-			}()
 		}(c)
 
 		lastEvent = <-events
