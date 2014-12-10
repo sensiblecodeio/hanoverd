@@ -214,7 +214,7 @@ func dockerConnect() (*docker.Client, error) {
 }
 
 // Main loop managing the lifecycle of all containers.
-func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-chan UpdateEvent) {
+func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events chan UpdateEvent) {
 	client, err := dockerConnect()
 	if err != nil {
 		dying.Fall()
@@ -302,13 +302,14 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 			wg.Add(1)
 			defer wg.Done()
 
-			isInternalPort := func(p int) bool {
+			// get the public port for an internal one
+			getMappedPort := func(p int) (int, bool) {
 				for _, m := range c.container.NetworkSettings.PortMappingAPI() {
-					if m.PrivatePort == int64(p) {
-						return true
+					if int(m.PrivatePort) == p {
+						return int(m.PublicPort), true
 					}
 				}
-				return false
+				return -1, false
 			}
 
 			removal := []func(){}
@@ -327,15 +328,16 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 			}()
 
 			for internalPort, bindings := range options.portBindings {
-				if isInternalPort(internalPort.Int()) {
+				if mappedPort, ok := getMappedPort(internalPort.Int()); ok {
 					for _, binding := range bindings {
-						var public int64
+						var public int
 						_, err := fmt.Sscan(binding.HostPort, &public)
 						if err != nil {
-							panic(err)
+							// If no public port specified, use same port as internal port
+							public = internalPort.Int()
 						}
 
-						remove, err := ConfigureRedirect(public, int64(internalPort.Int()))
+						remove, err := ConfigureRedirect(public, mappedPort)
 						if err != nil {
 							// Firewall rule didn't get applied.
 							c.err(fmt.Errorf("Firewall rule application failed: %q (public: %v, private: %v)", err, public, internalPort))
@@ -345,7 +347,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 						removal = append(removal, remove)
 					}
 				} else {
-					c.err(fmt.Errorf("Not a valid port! %v", internalPort))
+					c.err(fmt.Errorf("Docker image not exposing port %v!", internalPort))
 					return
 				}
 			}
