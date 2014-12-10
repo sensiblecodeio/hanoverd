@@ -348,7 +348,8 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 							public = internalPort.Int()
 						}
 
-						remove, err := ConfigureRedirect(public, mappedPort)
+						ipAddress := c.container.NetworkSettings.IPAddress
+						remove, err := ConfigureRedirect(public, mappedPort, ipAddress)
 						if err != nil {
 							// Firewall rule didn't get applied.
 							c.err(fmt.Errorf("Firewall rule application failed: %q (public: %v, private: %v)", err, public, internalPort))
