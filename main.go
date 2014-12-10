@@ -313,6 +313,19 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 
 			removal := []func(){}
 
+			defer func() {
+				// Block main exit until firewall rule has been removed
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					<-c.Closing.Barrier()
+					for _, remove := range removal {
+						remove()
+					}
+				}()
+			}()
+
 			for internalPort, bindings := range options.portBindings {
 				if isInternalPort(internalPort.Int()) {
 					for _, binding := range bindings {
@@ -343,16 +356,6 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events <-
 				previousLive.Closing.Fall()
 			}
 
-			// Block main exit until firewall rule has been removed
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
-				<-c.Closing.Barrier()
-				for _, remove := range removal {
-					remove()
-				}
-			}()
 		}(c)
 
 		lastEvent = <-events
