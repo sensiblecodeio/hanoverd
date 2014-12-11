@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/docker/docker/nat"
 	"github.com/docker/docker/opts"
@@ -48,6 +49,14 @@ type UpdateEvent struct {
 	Source        ContainerSource
 	OutputStream  io.Writer
 	BuildComplete chan<- struct{}
+}
+
+// Determine if stdin is connected without blocking
+func IsStdinReadable() bool {
+	syscall.SetNonblock(int(os.Stdin.Fd()), true)
+	_, err := os.Stdin.Read([]byte{0})
+	syscall.SetNonblock(int(os.Stdin.Fd()), false)
+	return err != io.EOF
 }
 
 func main() {
@@ -96,11 +105,16 @@ func main() {
 	var dying barrier.Barrier
 	defer dying.Fall()
 
-	go func() {
-		defer dying.Fall()
-		// Await Stdin closure, don't care about errors
-		_, _ = io.Copy(ioutil.Discard, os.Stdin)
-	}()
+	if IsStdinReadable() {
+		log.Println("Press CTRL-D to exit")
+		go func() {
+			defer dying.Fall()
+			defer log.Println("Stdin closed, exiting...")
+
+			// Await Stdin closure, don't care about errors
+			_, _ = io.Copy(ioutil.Discard, os.Stdin)
+		}()
+	}
 
 	events := make(chan UpdateEvent, 1)
 	originalEvent := UpdateEvent{Source: options.source}
