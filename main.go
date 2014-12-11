@@ -130,6 +130,15 @@ func main() {
 		}
 	}()
 
+	// SIGTERM handler
+	go func() {
+		defer dying.Fall()
+		defer log.Println("Received SIGTERM")
+		sig := make(chan os.Signal)
+		signal.Notify(sig, syscall.SIGTERM)
+		<-sig
+	}()
+
 	go loop(&wg, &dying, options, events)
 	go httpInterface(events)
 
