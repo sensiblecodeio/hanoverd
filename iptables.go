@@ -35,8 +35,12 @@ func iptables(action Action, chain string, source, target int, ipAddress string)
 		cmd = exec.Command(
 			"iptables", "--insert", chain, "1",
 			"--table", "nat",
-			"--protocol", "tcp", "--match", "tcp",
-			"!", "--destination", ipAddress,
+			"--protocol", "tcp",
+			// Prevent redirection of packets already going to the container
+			"--match", "tcp", "!", "--destination", ipAddress,
+			// Prevent redirection of ports on remote servers
+			// (i.e, don't make google:80 hit our container)
+			"--match", "addrtype", "--dst-type", "LOCAL",
 			"--dport", fmt.Sprint(source),
 			"--jump", "REDIRECT",
 			"--to-ports", fmt.Sprint(target))
@@ -44,8 +48,9 @@ func iptables(action Action, chain string, source, target int, ipAddress string)
 		cmd = exec.Command(
 			"iptables", "--delete", chain,
 			"--table", "nat",
-			"--protocol", "tcp", "--match", "tcp",
-			"!", "--destination", ipAddress,
+			"--protocol", "tcp",
+			"--match", "tcp", "!", "--destination", ipAddress,
+			"--match", "addrtype", "--dst-type", "LOCAL",
 			"--dport", fmt.Sprint(source),
 			"--jump", "REDIRECT",
 			"--to-ports", fmt.Sprint(target))
