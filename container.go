@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/docker/docker/utils"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
 )
@@ -95,6 +97,73 @@ func (c *Container) Build(config UpdateEvent) error {
 	return c.client.BuildImage(bo)
 }
 
+func PullProgressCopier(target io.Writer, errorC chan<- error) io.WriteCloser {
+	reader, wrappedWriter := io.Pipe()
+	go func() {
+		finish := make(chan struct{})
+		defer close(finish)
+		defer close(errorC)
+
+		mu := sync.Mutex{}
+		lastMessage := utils.JSONMessage{}
+		newMessage := false
+
+		go func() {
+			tick := time.Tick(1 * time.Second)
+			for {
+				select {
+				case <-tick:
+					mu.Lock()
+					if newMessage {
+						if lastMessage.ProgressMessage != "" {
+							fmt.Fprintln(target, lastMessage.ID[:8], lastMessage.Status, lastMessage.ProgressMessage)
+						} else if lastMessage.Progress != nil {
+							fmt.Fprintln(target, lastMessage.ID[:8], lastMessage.Status, lastMessage.Progress.String())
+						} else {
+							lastMessage.Display(target, false)
+						}
+						newMessage = false
+					}
+					mu.Unlock()
+
+				case <-finish:
+					return
+				}
+			}
+		}()
+
+		dec := json.NewDecoder(reader)
+		for {
+			tmp := utils.JSONMessage{}
+			err := dec.Decode(&tmp)
+
+			mu.Lock()
+			if tmp.Error != nil || tmp.ErrorMessage != "" {
+				tmp.Display(target, false)
+				if tmp.Error != nil {
+					errorC <- tmp.Error
+				} else {
+					errorC <- fmt.Errorf("%s", tmp.ErrorMessage)
+				}
+				return
+			} else {
+				newMessage = true
+				lastMessage = tmp
+			}
+			mu.Unlock()
+
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				log.Print("decode failure in  ", err)
+				return
+			}
+		}
+	}()
+	return wrappedWriter
+}
+
 // Pull an image from a docker repository.
 func (c *Container) Pull(config UpdateEvent) error {
 	if config.BuildComplete != nil {
@@ -106,13 +175,23 @@ func (c *Container) Pull(config UpdateEvent) error {
 	log.Println("Pulling", pio.Repository)
 	pio.Registry = ""
 	pio.Tag = "latest"
-	pio.OutputStream = config.OutputStream
-	if pio.OutputStream == nil {
-		pio.OutputStream = os.Stderr
-	}
 	pio.RawJSONStream = true
 
-	return c.client.PullImage(pio, docker.AuthConfiguration{})
+	target := config.OutputStream
+	if target == nil {
+		target = os.Stderr
+	}
+
+	errorC := make(chan error)
+	outputStream := PullProgressCopier(target, errorC)
+	defer outputStream.Close()
+	pio.OutputStream = outputStream
+
+	pullImageErr := c.client.PullImage(pio, docker.AuthConfiguration{})
+	if pullImageErr != nil {
+		return pullImageErr
+	}
+	return <-errorC
 }
 
 // `docker create` the container.
