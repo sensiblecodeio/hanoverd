@@ -108,6 +108,16 @@ func PullProgressCopier(target io.Writer, errorC chan<- error) io.WriteCloser {
 		lastMessage := utils.JSONMessage{}
 		newMessage := false
 
+		printMessage := func(m *utils.JSONMessage) {
+			if m.ProgressMessage != "" {
+				fmt.Fprintln(target, m.ID[:8], m.Status, m.ProgressMessage)
+			} else if m.Progress != nil {
+				fmt.Fprintln(target, m.ID[:8], m.Status, m.Progress.String())
+			} else {
+				m.Display(target, false)
+			}
+		}
+
 		go func() {
 			tick := time.Tick(1 * time.Second)
 			for {
@@ -115,13 +125,7 @@ func PullProgressCopier(target io.Writer, errorC chan<- error) io.WriteCloser {
 				case <-tick:
 					mu.Lock()
 					if newMessage {
-						if lastMessage.ProgressMessage != "" {
-							fmt.Fprintln(target, lastMessage.ID[:8], lastMessage.Status, lastMessage.ProgressMessage)
-						} else if lastMessage.Progress != nil {
-							fmt.Fprintln(target, lastMessage.ID[:8], lastMessage.Status, lastMessage.Progress.String())
-						} else {
-							lastMessage.Display(target, false)
-						}
+						printMessage(&lastMessage)
 						newMessage = false
 					}
 					mu.Unlock()
@@ -146,6 +150,8 @@ func PullProgressCopier(target io.Writer, errorC chan<- error) io.WriteCloser {
 					errorC <- fmt.Errorf("%s", tmp.ErrorMessage)
 				}
 				return
+			} else if tmp.Status != "Downloading" && tmp.Status != "Extracting" {
+				printMessage(&tmp)
 			} else {
 				newMessage = true
 				lastMessage = tmp
