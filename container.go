@@ -103,13 +103,14 @@ func (c *Container) Pull(config UpdateEvent) error {
 
 	pio := docker.PullImageOptions{}
 	pio.Repository = config.Source.dockerImageName
+	log.Println("Pulling", pio.Repository)
 	pio.Registry = ""
 	pio.Tag = "latest"
 	pio.OutputStream = config.OutputStream
 	if pio.OutputStream == nil {
 		pio.OutputStream = os.Stderr
 	}
-	pio.RawJSONStream = false
+	pio.RawJSONStream = true
 
 	return c.client.PullImage(pio, docker.AuthConfiguration{})
 }
