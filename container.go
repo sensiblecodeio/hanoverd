@@ -97,8 +97,9 @@ func (c *Container) Build(config UpdateEvent) error {
 	return c.client.BuildImage(bo)
 }
 
-func PullProgressCopier(target io.Writer, errorC chan<- error) io.WriteCloser {
+func PullProgressCopier(target io.Writer) (io.WriteCloser, <-chan error) {
 	reader, wrappedWriter := io.Pipe()
+	errorC := make(chan error)
 	go func() {
 		finish := make(chan struct{})
 		defer close(finish)
@@ -167,7 +168,7 @@ func PullProgressCopier(target io.Writer, errorC chan<- error) io.WriteCloser {
 			}
 		}
 	}()
-	return wrappedWriter
+	return wrappedWriter, errorC
 }
 
 // Pull an image from a docker repository.
@@ -188,15 +189,17 @@ func (c *Container) Pull(config UpdateEvent) error {
 		target = os.Stderr
 	}
 
-	errorC := make(chan error)
-	outputStream := PullProgressCopier(target, errorC)
-	defer outputStream.Close()
+	outputStream, errorC := PullProgressCopier(target)
 	pio.OutputStream = outputStream
 
 	pullImageErr := c.client.PullImage(pio, docker.AuthConfiguration{})
+
+	outputStream.Close()
+
 	if pullImageErr != nil {
 		return pullImageErr
 	}
+
 	return <-errorC
 }
 
