@@ -167,6 +167,9 @@ func (c *Container) AwaitListening() bool {
 		url := fmt.Sprint("http://", port.IP, ":", port.PublicPort, "/")
 		for {
 			response, err := http.Get(url)
+			if response != nil && response.Body != nil {
+				response.Body.Close()
+			}
 			if err == nil && response.StatusCode == http.StatusOK {
 				return true
 			}
