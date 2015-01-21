@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -177,12 +178,19 @@ func (c *Container) Pull(config UpdateEvent) error {
 		defer close(config.BuildComplete)
 	}
 
+	parts := strings.SplitN(config.Source.dockerImageName, ":", 2)
+
 	pio := docker.PullImageOptions{}
-	pio.Repository = config.Source.dockerImageName
-	log.Println("Pulling", pio.Repository)
-	pio.Registry = ""
+
+	pio.Repository = parts[0]
 	pio.Tag = "latest"
+	if len(parts) == 2 {
+		pio.Tag = parts[1]
+	}
+	pio.Registry = ""
 	pio.RawJSONStream = true
+
+	log.Println("Pulling", pio.Repository)
 
 	target := config.OutputStream
 	if target == nil {
