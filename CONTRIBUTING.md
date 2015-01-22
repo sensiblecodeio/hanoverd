@@ -2,6 +2,10 @@
 
 Contributions are welcome in all forms!
 
+# Committing
+
+Please try to follow this [style guide](https://github.com/alphagov/styleguides/blob/master/git.md).
+
 ### Sign your work
 
 (This section is an excerpt from the 
