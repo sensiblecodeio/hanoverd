@@ -5,7 +5,23 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
+
+var IPTablesPath = "iptables"
+
+func init() {
+
+	err := CheckIPTables()
+	if err != nil {
+		wd, err := os.Getwd()
+		if err != nil {
+			return
+		}
+		IPTablesPath = filepath.Join(wd, IPTablesPath)
+	}
+
+}
 
 // NOTEs from messing with iptables proxying:
 // For external:
@@ -22,7 +38,7 @@ const (
 )
 
 func CheckIPTables() error {
-	return exec.Command("iptables", "-L").Run()
+	return exec.Command(IPTablesPath, "-L").Run()
 }
 
 // Invoke one iptables command.
@@ -33,7 +49,7 @@ func iptables(action Action, chain string, source, target int, ipAddress string)
 	switch action {
 	case INSERT:
 		cmd = exec.Command(
-			"iptables", "--insert", chain, "1",
+			IPTablesPath, "--insert", chain, "1",
 			"--table", "nat",
 			"--protocol", "tcp",
 			// Prevent redirection of packets already going to the container
@@ -46,7 +62,7 @@ func iptables(action Action, chain string, source, target int, ipAddress string)
 			"--to-ports", fmt.Sprint(target))
 	case DELETE:
 		cmd = exec.Command(
-			"iptables", "--delete", chain,
+			IPTablesPath, "--delete", chain,
 			"--table", "nat",
 			"--protocol", "tcp",
 			"--match", "tcp", "!", "--destination", ipAddress,
