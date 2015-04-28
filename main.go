@@ -59,14 +59,6 @@ func IsStdinReadable() bool {
 	return err != io.EOF
 }
 
-func RunDaemon() {
-	log.Println("Running in daemon mode")
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
 func main() {
 	var err error
 
