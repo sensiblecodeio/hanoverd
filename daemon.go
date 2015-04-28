@@ -263,16 +263,8 @@ func gitCheckout(git_dir, checkout_dir, ref string) error {
 
 	log.Println("Populating", checkout_dir)
 
-	// Checkout without specifying a path to update the index
-	// (required for ls-files to work correctly)
-	args := []string{"--work-tree", checkout_dir, "checkout", ref}
-	err = Command(git_dir, "git", args...).Run()
-	if err != nil {
-		return err
-	}
-
 	// Put the files physically in checkout_dir
-	args = []string{"--work-tree", checkout_dir, "checkout", ref, "--", "."}
+	args := []string{"--work-tree", checkout_dir, "checkout", ref, "--", "."}
 	err = Command(git_dir, "git", args...).Run()
 	if err != nil {
 		return err
