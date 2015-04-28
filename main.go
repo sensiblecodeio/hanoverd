@@ -213,15 +213,13 @@ func dockerConnect() (*docker.Client, error) {
 		docker_host = "unix:///run/docker.sock"
 	}
 
-	docker_tls_verify := os.Getenv("DOCKER_TLS_VERIFY")
-	docker_tls_verify_bool := false
-	if docker_tls_verify != "" {
-		docker_tls_verify_bool = true
-	}
+	docker_tls_verify := os.Getenv("DOCKER_TLS_VERIFY") != ""
 
-	var client *docker.Client
-	var err error
-	if docker_tls_verify_bool {
+	var (
+		client *docker.Client
+		err    error
+	)
+	if docker_tls_verify {
 		docker_cert_path := os.Getenv("DOCKER_CERT_PATH")
 		docker_cert := docker_cert_path + "/cert.pem"
 		docker_key := docker_cert_path + "/key.pem"
