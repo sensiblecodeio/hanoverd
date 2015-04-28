@@ -59,6 +59,14 @@ func IsStdinReadable() bool {
 	return err != io.EOF
 }
 
+func RunDaemon() {
+	log.Println("Running in daemon mode")
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func main() {
 	var err error
 
@@ -79,6 +87,8 @@ func main() {
 		// If the first arg is "@", then use the Cwd
 		if args[0] == "@" {
 			options.source.Type = BuildCwd
+		} else if args[0] == "daemon" {
+			RunDaemon()
 		} else {
 			options.source.Type = DockerPull
 			options.source.dockerImageName = args[0]
