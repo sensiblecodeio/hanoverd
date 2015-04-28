@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/utils"
+	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
 )
@@ -107,10 +107,10 @@ func PullProgressCopier(target io.Writer) (io.WriteCloser, <-chan error) {
 		defer close(errorC)
 
 		mu := sync.Mutex{}
-		lastMessage := utils.JSONMessage{}
+		lastMessage := jsonmessage.JSONMessage{}
 		newMessage := false
 
-		printMessage := func(m *utils.JSONMessage) {
+		printMessage := func(m *jsonmessage.JSONMessage) {
 			if m.ProgressMessage != "" {
 				fmt.Fprintln(target, m.ID[:8], m.Status, m.ProgressMessage)
 			} else if m.Progress != nil {
@@ -140,7 +140,7 @@ func PullProgressCopier(target io.Writer) (io.WriteCloser, <-chan error) {
 
 		dec := json.NewDecoder(reader)
 		for {
-			tmp := utils.JSONMessage{}
+			tmp := jsonmessage.JSONMessage{}
 			err := dec.Decode(&tmp)
 
 			mu.Lock()
