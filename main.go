@@ -79,6 +79,8 @@ func main() {
 		// If the first arg is "@", then use the Cwd
 		if args[0] == "@" {
 			options.source.Type = BuildCwd
+		} else if args[0] == "daemon" {
+			RunDaemon()
 		} else {
 			options.source.Type = DockerPull
 			options.source.dockerImageName = args[0]

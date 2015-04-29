@@ -1,0 +1,21 @@
+daemon:
+  build: .
+  links: [registry]
+  # Required for iptables
+  privileged: true
+  environment:
+    - SSH_AUTH_SOCK
+  volumes:
+    - /run/docker.sock:/run/docker.sock
+    - .:/go/src/github.com/scraperwiki/hanoverd
+    - /run/user/1000/keyring-gnlNUl/ssh:/run/user/1000/keyring-gnlNUl/ssh
+    - .:/repos/
+  working_dir: /repos/
+  command: rerun github.com/scraperwiki/hanoverd daemon --registry registry.localdomain:5000
+  ports:
+    - "8080:8080"
+
+registry:
+  image: registry:2
+  ports:
+    - "5000:5000"
