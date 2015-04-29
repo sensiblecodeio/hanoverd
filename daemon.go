@@ -254,7 +254,10 @@ func gitDescribe(git_dir, ref string) (desc string, err error) {
 func gitCheckout(git_dir, checkout_dir, ref string) error {
 
 	// TODO(pwaller): this needs to be protected by a lock per git_dir,
-	// since git-ls-files operates on the contents of the index :(
+	// since submodule state is maintained in git_dir for the duration of the
+	// checkout. To avoid this, one would need to write their own submodule
+	// checkout mechanism which looked inside .gitmodules and did something
+	// analogous to gitLocalMirror for each. Ick.
 
 	err := os.MkdirAll(path.Join(git_dir, checkout_dir), 0777)
 	if err != nil {
@@ -270,6 +273,7 @@ func gitCheckout(git_dir, checkout_dir, ref string) error {
 		return err
 	}
 
+	// Git submodule doesn't understand --work-tree properly, :/
 	wd := path.Join(git_dir, checkout_dir)
 
 	args = []string{"--work-tree", ".", "submodule", "sync"}
@@ -290,6 +294,15 @@ func gitCheckout(git_dir, checkout_dir, ref string) error {
 	err = gitSetMTimes(git_dir, git_dir+"/"+checkout_dir, ref)
 	if err != nil {
 		return err
+	}
+
+	cmd := Command(wd, "git", "submodule", "foreach", "--quiet", "pwd")
+	output, err := cmd.Output()
+
+	submoduleWorkDirs := strings.Split(string(output), "\n")
+	for _, wd := range submoduleWorkDirs {
+		log.Println("Submodule:", wd)
+		gitSetMTimes(wd, wd, "HEAD")
 	}
 
 	return nil
@@ -348,7 +361,7 @@ func gitSetMTimes(git_dir, checkout_dir, ref string) error {
 	files := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
 	for _, file := range files {
 		gitLog := Command(git_dir, "git", "log", "-1", "--date=rfc2822",
-			"--format=%cd", "--", file)
+			"--format=%cd", ref, "--", file)
 		gitLog.Stdout = nil
 
 		out, err := gitLog.Output()
