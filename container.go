@@ -275,8 +275,17 @@ func (c *Container) AwaitListening() bool {
 			if response != nil && response.Body != nil {
 				response.Body.Close()
 			}
-			if err == nil && response.StatusCode == http.StatusOK {
-				return true
+			if err == nil {
+				switch response.StatusCode {
+				case http.StatusOK:
+					return true
+				case http.StatusNotFound:
+				default:
+					log.Printf("Got non-200 status code: %v, giving up",
+						response.StatusCode)
+					c.Failed.Fall()
+					return false
+				}
 			}
 
 			if time.Now().After(startDeadline) {
