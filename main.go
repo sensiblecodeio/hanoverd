@@ -83,12 +83,12 @@ func main() {
 		},
 	}
 
-	app.Action = oldMain
+	app.Action = ActionRun
 
 	app.RunAndExitOnError()
 }
 
-func oldMain(c *cli.Context) {
+func ActionRun(c *cli.Context) {
 	var err error
 
 	options := Options{}
