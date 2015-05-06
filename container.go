@@ -261,6 +261,13 @@ func (c *Container) CopyOutput() error {
 // Returns `true` for success and `false` for failure.
 func (c *Container) AwaitListening() bool {
 
+	const (
+		DefaultTimeout = 5 * time.Minute
+		PollFrequency  = 10 // times per second (via integer division of ns)
+	)
+
+	startDeadline := time.Now().Add(DefaultTimeout)
+
 	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
 		url := fmt.Sprint("http://", port.IP, ":", port.PublicPort, c.StatusURI)
 		for {
@@ -271,7 +278,13 @@ func (c *Container) AwaitListening() bool {
 			if err == nil && response.StatusCode == http.StatusOK {
 				return true
 			}
-			time.Sleep(50 * time.Millisecond)
+
+			if time.Now().After(startDeadline) {
+				log.Printf("Took longer than %v to start, giving up", DefaultTimeout)
+				return false
+			}
+
+			time.Sleep(time.Second / PollFrequency)
 
 			select {
 			case <-c.Closing.Barrier():
