@@ -42,6 +42,7 @@ type Options struct {
 	containerArgs []string
 	ports         nat.PortSet
 	portBindings  nat.PortMap
+	statusURI     string
 }
 
 type UpdateEvent struct {
@@ -74,6 +75,11 @@ func main() {
 			Name:  "publish, p",
 			Usage: "ports to publish (same syntax as docker)",
 			Value: &cli.StringSlice{},
+		},
+		cli.StringFlag{
+			Name:  "status-uri",
+			Usage: "specify URI which returns 200 OK when functioning correctly",
+			Value: "/",
 		},
 	}
 
@@ -284,6 +290,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 		c := NewContainer(client, getName(), wg)
 		c.Args = options.containerArgs
 		c.Env = options.env
+		c.StatusURI = options.statusURI
 
 		// Global exit should cause container exit
 		dying.Forward(&c.Closing)
@@ -323,7 +330,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 
 		go func(c *Container) {
 
-			log.Println("Awaiting container fate:", c.Name)
+			log.Printf("Awaiting container fate: %q %q", c.Name, c.StatusURI)
 			select {
 			case <-c.Failed.Barrier():
 				log.Println("Container failed before going live:", c.Name)

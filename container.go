@@ -19,6 +19,7 @@ import (
 type Container struct {
 	Name      string
 	Args, Env []string
+	StatusURI string
 
 	client    *docker.Client
 	container *docker.Container
@@ -261,7 +262,7 @@ func (c *Container) CopyOutput() error {
 func (c *Container) AwaitListening() bool {
 
 	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
-		url := fmt.Sprint("http://", port.IP, ":", port.PublicPort, "/")
+		url := fmt.Sprint("http://", port.IP, ":", port.PublicPort, c.StatusURI)
 		for {
 			response, err := http.Get(url)
 			if response != nil && response.Body != nil {
