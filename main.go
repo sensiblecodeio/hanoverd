@@ -18,9 +18,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/codegangsta/cli"
 	"github.com/docker/docker/nat"
-	"github.com/docker/docker/opts"
-	"github.com/docker/docker/pkg/mflag"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
 )
@@ -38,7 +37,7 @@ func DockerErrorStatus(err error) int {
 }
 
 type Options struct {
-	env, publish  opts.ListOpts
+	env, publish  []string
 	source        ContainerSource
 	containerArgs []string
 	ports         nat.PortSet
@@ -60,22 +59,40 @@ func IsStdinReadable() bool {
 }
 
 func main() {
+	app := cli.NewApp()
+
+	app.Name = "hanoverd"
+	app.Usage = "handover docker containers"
+
+	app.Flags = []cli.Flag{
+		cli.StringSliceFlag{
+			Name:  "env, e",
+			Usage: "environment variables to pass (reads from env if = omitted)",
+			Value: &cli.StringSlice{},
+		},
+		cli.StringSliceFlag{
+			Name:  "publish, p",
+			Usage: "ports to publish (same syntax as docker)",
+			Value: &cli.StringSlice{},
+		},
+	}
+
+	app.Action = oldMain
+
+	app.RunAndExitOnError()
+}
+
+func oldMain(c *cli.Context) {
 	var err error
 
-	options := Options{
-		env:     opts.NewListOpts(nil),
-		publish: opts.NewListOpts(nil),
-	}
-	mflag.Var(&options.env, []string{"e", "-env"}, "Set environment variables")
-	mflag.Var(&options.publish, []string{"p", "-publish"}, "Publish a container's port to the host")
+	options := Options{}
+	options.env = makeEnv(c.StringSlice("env"))
+	options.statusURI = c.String("status-uri")
 
-	mflag.Parse()
-
-	l := mflag.NArg()
-	if l == 0 {
+	if len(c.Args()) == 0 {
 		options.source.Type = BuildCwd
 	} else {
-		args := mflag.Args()
+		args := c.Args()
 		// If the first arg is "@", then use the Cwd
 		if args[0] == "@" {
 			options.source.Type = BuildCwd
@@ -93,7 +110,7 @@ func main() {
 		log.Fatal("Unable to run `iptables -L`, see README (", err, ")")
 	}
 
-	options.ports, options.portBindings, err = nat.ParsePortSpecs(options.publish.GetAll())
+	options.ports, options.portBindings, err = nat.ParsePortSpecs(c.StringSlice("publish"))
 	if err != nil {
 		log.Fatalln("--publish:", err)
 	}
@@ -148,9 +165,9 @@ func main() {
 }
 
 // Make an env []string from a list of options specified on the cmdline.
-func makeEnv(opt opts.ListOpts) []string {
+func makeEnv(opts []string) []string {
 	var env []string
-	for _, envVar := range opt.GetAll() {
+	for _, envVar := range opts {
 		if strings.Contains(envVar, "=") {
 			env = append(env, envVar)
 		} else {
@@ -257,8 +274,6 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 		return fmt.Sprint(baseName, "_", n)
 	}
 
-	env := makeEnv(options.env)
-
 	var liveMutex sync.Mutex
 	var live *Container
 
@@ -268,7 +283,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 
 		c := NewContainer(client, getName(), wg)
 		c.Args = options.containerArgs
-		c.Env = env
+		c.Env = options.env
 
 		// Global exit should cause container exit
 		dying.Forward(&c.Closing)
