@@ -52,6 +52,7 @@ type ContainerSource struct {
 	buildTarballURL     string
 	dockerImageName     string
 	githubURL           string
+	githubRef           string
 }
 
 // Construct a *Container. When the `wg` WaitGroup is zero, there is nothing
@@ -386,10 +387,10 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 			return -2, err
 		}
 	case GithubRepository:
-		buildDir, buildName, cleanup := git.PrepBuildDirectory(
-			event.Source.githubURL, "master")
+		log.Printf("Prep github mirror: %v", event.Source.githubRef)
 
-		_ = cleanup // TODO(pwaller): Hmm.
+		buildDir, buildName, cleanup := git.PrepBuildDirectory(
+			event.Source.githubURL, event.Source.githubRef)
 
 		event.Source.buildDirectory = buildDir
 		c.Name = buildName
@@ -399,7 +400,8 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 			return -2, err
 		}
 
-		// return -2, fmt.Errorf("Not yet implemented...")
+		cleanup()
+
 	default:
 		return -2, fmt.Errorf("unknown source type: %v", event.Source.Type)
 	}

@@ -5,14 +5,17 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -94,6 +97,12 @@ func main() {
 	app.RunAndExitOnError()
 }
 
+// Returns true if $HOME/.ssh exists, false otherwise
+func HaveDotSSH() bool {
+	_, err := os.Stat(os.ExpandEnv("${HOME}/.ssha"))
+	return err == nil
+}
+
 func ActionRun(c *cli.Context) {
 	var err error
 
@@ -101,16 +110,47 @@ func ActionRun(c *cli.Context) {
 	options.env = makeEnv(c.StringSlice("env"))
 	options.statusURI = c.String("status-uri")
 
-	if len(c.Args()) == 0 {
+	if c.GlobalIsSet("hookbot") {
+
+		hookbotRe := regexp.MustCompile("/sub/github.com/repo/([^/]+)/([^/]+)/push/branch/([^/]+)")
+
+		hookbotURLStr := c.GlobalString("hookbot")
+		hookbotURL, err := url.Parse(hookbotURLStr)
+		if err != nil {
+			log.Fatalf("Hookbot URL %q does not parse: %v", hookbotURLStr, err)
+		}
+
+		if !hookbotRe.MatchString(hookbotURL.Path) {
+			log.Fatalf("Hookbot URL path %q does not match %q", hookbotURL.Path, hookbotRe.String())
+		}
+
+		groups := hookbotRe.FindStringSubmatch(hookbotURL.Path)
+		user, repo, branch := groups[1], groups[2], groups[3]
+
+		format := "https://github.com/%s/%s"
+		if HaveDotSSH() {
+			format = "git@github.com:%s/%s"
+		}
+
+		s := ContainerSource{
+			Type:      GithubRepository,
+			githubURL: fmt.Sprintf(format, user, repo),
+			githubRef: branch,
+		}
+		options.source = s
+
+		options.containerArgs = c.Args()
+
+		log.Printf("Hookbot monitoring %v@%v via %v", s.githubURL, s.githubRef, hookbotURL.Host)
+
+	} else if len(c.Args()) == 0 {
 		options.source.Type = BuildCwd
+
 	} else {
 		first := c.Args().First()
 		args := c.Args()[1:]
 
-		if strings.HasPrefix(first, "github.com/") {
-			options.source.Type = GithubRepository
-			options.source.githubURL = first
-		} else if first == "@" {
+		if first == "@" {
 			// If the first arg is "@", then use the Cwd
 			options.source.Type = BuildCwd
 		} else if first == "daemon" {
@@ -184,34 +224,38 @@ func ActionRun(c *cli.Context) {
 	<-dying.Barrier()
 }
 
-func MonitorHookbot(target string, notify chan UpdateEvent) {
+func MonitorHookbot(target string, notify chan<- UpdateEvent) {
 	finish := make(chan struct{})
 	header := http.Header{}
 
-	events, errs, err := listen.Watch(target, header, finish)
-	if err != nil {
-		log.Printf("Monitor hookbot")
-		return
-	}
+	events, errs := listen.RetryingWatch(target, header, finish)
 
 	log.Println("Monitoring hookbot")
 
 	for ev := range events {
 
-		msg, err := ioutil.ReadAll(ev.Body)
+		data := map[string]string{}
+		err := json.Unmarshal(ev, &data)
 		if err != nil {
-			log.Printf("Msg: %s", msg)
+			log.Printf("Failed to parse message: %v", err)
+			continue
 		}
 
-		outBound := &UpdateEvent{}
 		done := make(chan struct{})
+
+		outBound := &UpdateEvent{}
 		outBound.BuildComplete = done
 		outBound.Source.Type = GithubRepository
 		outBound.Source.githubURL = "github.com/scraperwiki/hookbot"
+		outBound.Source.githubRef = data["SHA"]
+
 		notify <- *outBound
+
+		<-done
+		log.Printf("--- Build completed %v ---", outBound.Source.githubRef)
 	}
 
-	for err = range errs {
+	for err := range errs {
 		log.Printf("Error in MonitorHookbot: %v", err)
 	}
 }

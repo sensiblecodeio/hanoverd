@@ -86,7 +86,6 @@ func gitLocalMirror(url, git_dir string, messages io.Writer) (err error) {
 	}
 
 	cmd := Command(".", "git", "clone", "-q", "--mirror", url, git_dir)
-
 	cmd.Stdout = messages
 	cmd.Stderr = messages
 	err = cmd.Run()
@@ -109,7 +108,8 @@ func gitLocalMirror(url, git_dir string, messages io.Writer) (err error) {
 			close(done)
 		}()
 
-		const timeout = 20 * time.Second
+		const timeout = 1 * time.Minute
+
 		select {
 		case <-done:
 		case <-time.After(timeout):
@@ -241,7 +241,7 @@ func gitSetMTimes(git_dir, checkout_dir, ref string) error {
 	files := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
 	for _, file := range files {
 		gitLog := Command(git_dir, "git", "log", "-1", "--date=rfc2822",
-			"--format=%cd", "--", file)
+			"--format=%cd", ref, "--", file)
 		gitLog.Stdout = nil
 		gitLog.Stderr = os.Stderr
 
@@ -313,7 +313,7 @@ func PrepBuildDirectory(
 
 	gitLocalMirror(remote, gitDir, os.Stderr)
 
-	rev, err := gitRevParse(gitDir, "HEAD")
+	rev, err := gitRevParse(gitDir, ref)
 	if err != nil {
 		log.Printf("Unable to parse rev: %v", err)
 		return
