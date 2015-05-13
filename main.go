@@ -16,7 +16,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/codegangsta/cli"
 	"github.com/docker/docker/nat"
@@ -53,9 +54,9 @@ type UpdateEvent struct {
 
 // Determine if stdin is connected without blocking
 func IsStdinReadable() bool {
-	syscall.SetNonblock(int(os.Stdin.Fd()), true)
+	unix.SetNonblock(int(os.Stdin.Fd()), true)
 	_, err := os.Stdin.Read([]byte{0})
-	syscall.SetNonblock(int(os.Stdin.Fd()), false)
+	unix.SetNonblock(int(os.Stdin.Fd()), false)
 	return err != io.EOF
 }
 
@@ -148,9 +149,9 @@ func ActionRun(c *cli.Context) {
 	// SIGINT handler
 	go func() {
 		sig := make(chan os.Signal)
-		signal.Notify(sig, os.Interrupt)
+		signal.Notify(sig, unix.SIGHUP)
 		for _ = range sig {
-			// For now, SIGINT always means build the working dir.
+			// For now, SIGHUP always means build the working dir.
 			events <- originalEvent
 		}
 	}()
@@ -160,7 +161,7 @@ func ActionRun(c *cli.Context) {
 		defer dying.Fall()
 		defer log.Println("Received SIGTERM")
 		sig := make(chan os.Signal)
-		signal.Notify(sig, syscall.SIGTERM)
+		signal.Notify(sig, unix.SIGTERM)
 		<-sig
 	}()
 
