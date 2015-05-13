@@ -14,6 +14,8 @@ import (
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
+
+	"github.com/scraperwiki/hanoverd/builder/git"
 )
 
 type Container struct {
@@ -40,13 +42,16 @@ const (
 	BuildTarballContent            // Build with specified io.Reader as context
 	BuildTarballURL                // Build with specified remote URL as context
 	DockerPull                     // Run a docker pull to obtain the image
+	GithubRepository               // build a github repository by making a local mirror
 )
 
 type ContainerSource struct {
 	Type                SourceType
 	buildTarballContent io.Reader
+	buildDirectory      string
 	buildTarballURL     string
 	dockerImageName     string
+	githubURL           string
 }
 
 // Construct a *Container. When the `wg` WaitGroup is zero, there is nothing
@@ -85,6 +90,8 @@ func (c *Container) Build(config UpdateEvent) error {
 	}
 
 	switch config.Source.Type {
+	case GithubRepository:
+		bo.ContextDir = config.Source.buildDirectory
 	case BuildCwd:
 		bo.ContextDir, err = os.Getwd()
 		if err != nil {
@@ -228,8 +235,10 @@ func (c *Container) Create(source ContainerSource) error {
 	switch source.Type {
 	case DockerPull:
 		opts.Config.Image = source.dockerImageName
-	case BuildCwd, BuildTarballContent:
+	case BuildCwd, BuildTarballContent, GithubRepository:
 		opts.Config.Image = c.Name
+	default:
+		return fmt.Errorf("unsupported source type %v", source.Type)
 	}
 
 	var err error
@@ -376,6 +385,23 @@ func (c *Container) Run(event UpdateEvent) (int, error) {
 		if err != nil {
 			return -2, err
 		}
+	case GithubRepository:
+		buildDir, buildName, cleanup := git.PrepBuildDirectory(
+			event.Source.githubURL, "master")
+
+		_ = cleanup // TODO(pwaller): Hmm.
+
+		event.Source.buildDirectory = buildDir
+		c.Name = buildName
+
+		err := c.Build(event)
+		if err != nil {
+			return -2, err
+		}
+
+		// return -2, fmt.Errorf("Not yet implemented...")
+	default:
+		return -2, fmt.Errorf("unknown source type: %v", event.Source.Type)
 	}
 
 	err := c.Create(event.Source)
