@@ -317,6 +317,16 @@ func (c *Container) AwaitListening() bool {
 	return false
 }
 
+// Given an internal port, return the port mapped by docker, if there is one.
+func (c *Container) MappedPort(internal int) (int, bool) {
+	for _, m := range c.container.NetworkSettings.PortMappingAPI() {
+		if int(m.PrivatePort) == internal {
+			return int(m.PublicPort), true
+		}
+	}
+	return -1, false
+}
+
 // Start the container (and notify it if c.Closing falls)
 func (c *Container) Start() error {
 	hc := &docker.HostConfig{

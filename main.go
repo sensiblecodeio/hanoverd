@@ -370,12 +370,12 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 		return fmt.Sprint(baseName, "_", n)
 	}
 
-	var liveMutex sync.Mutex
-	var live *Container
+	flips := make(chan *Container)
+	go Flipper(wg, options, flips)
 
-	lastEvent := <-events
+	for event := range events {
 
-	for {
+		log.Printf("New container starting")
 
 		c := NewContainer(client, getName(), wg)
 		c.Args = options.containerArgs
@@ -398,13 +398,15 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 				}
 			}()
 
-			status, err := c.Run(lastEvent)
+			status, err := c.Run(event)
 			if err != nil {
 				switch err := err.(type) {
 				case *docker.Error:
 					// (name) Conflict
 					if err.Status == 409 {
-						log.Printf("Container with name %q exists, aborting...", c.Name)
+						// retry
+						log.Printf("Container with name %q exists, using a new name...", c.Name)
+						events <- event
 						c.Failed.Fall()
 						return
 					}
@@ -416,7 +418,9 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 			log.Println("container", c.Name, "quit, exit status:", status)
 		}(c)
 
+		wg.Add(1)
 		go func(c *Container) {
+			defer wg.Done()
 
 			log.Printf("Awaiting container fate: %q %q", c.Name, c.StatusURI)
 			select {
@@ -437,77 +441,78 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 
 			log.Println("Container going live:", c.Name)
 
-			liveMutex.Lock()
-			defer liveMutex.Unlock()
-			previousLive := live
+			flips <- c
+		}(c)
+	}
+}
 
-			// Block main exit until the firewall rule has been placed
-			// (and removed)
-			wg.Add(1)
+func Flipper(wg *sync.WaitGroup, options Options, newContainers <-chan *Container) {
+	var live *Container
+
+	for container := range newContainers {
+
+		err := flip(wg, options, container)
+		if err != nil {
+			// Don't flip the firewall rules if there was a problem.
+			continue
+		}
+
+		if live != nil {
+			live.Closing.Fall()
+		}
+
+		live = container
+	}
+}
+
+// Make container receive live traffic
+func flip(wg *sync.WaitGroup, options Options, container *Container) error {
+
+	removal := []func(){}
+
+	defer func() {
+		// Block main exit until firewall rule has been removed
+		wg.Add(1)
+		go func() {
 			defer wg.Done()
 
-			// get the public port for an internal one
-			getMappedPort := func(p int) (int, bool) {
-				for _, m := range c.container.NetworkSettings.PortMappingAPI() {
-					if int(m.PrivatePort) == p {
-						return int(m.PublicPort), true
-					}
+			<-container.Closing.Barrier()
+
+			for _, remove := range removal {
+				remove()
+			}
+		}()
+	}()
+
+	for internalPort, bindings := range options.portBindings {
+		if mappedPort, ok := container.MappedPort(internalPort.Int()); ok {
+			for _, binding := range bindings {
+				var public int
+				_, err := fmt.Sscan(binding.HostPort, &public)
+				if err != nil {
+					// If no public port specified, use same port as internal port
+					public = internalPort.Int()
 				}
-				return -1, false
-			}
 
-			removal := []func(){}
-
-			defer func() {
-				// Block main exit until firewall rule has been removed
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-
-					<-c.Closing.Barrier()
-					for _, remove := range removal {
-						remove()
-					}
-				}()
-			}()
-
-			for internalPort, bindings := range options.portBindings {
-				if mappedPort, ok := getMappedPort(internalPort.Int()); ok {
-					for _, binding := range bindings {
-						var public int
-						_, err := fmt.Sscan(binding.HostPort, &public)
-						if err != nil {
-							// If no public port specified, use same port as internal port
-							public = internalPort.Int()
-						}
-
-						ipAddress := c.container.NetworkSettings.IPAddress
-						remove, err := ConfigureRedirect(public, mappedPort, ipAddress)
-						if err != nil {
-							// Firewall rule didn't get applied.
-							c.err(fmt.Errorf("Firewall rule application failed: %q (public: %v, private: %v)", err, public, internalPort))
-							return
-						}
-
-						removal = append(removal, remove)
-					}
-				} else {
-					c.err(fmt.Errorf("Docker image not exposing port %v!", internalPort))
-					return
+				ipAddress := container.container.NetworkSettings.IPAddress
+				remove, err := ConfigureRedirect(public, mappedPort, ipAddress)
+				if err != nil {
+					// Firewall rule didn't get applied.
+					err := fmt.Errorf(
+						"Firewall rule application failed: %q (public: %v, private: %v)",
+						err, public, internalPort)
+					container.err(err)
+					return err
 				}
+
+				removal = append(removal, remove)
 			}
-
-			live = c
-			if previousLive != nil {
-				previousLive.Closing.Fall()
-			}
-
-		}(c)
-
-		lastEvent = <-events
-
-		c.Superceded.Fall()
-
-		log.Println("Signalled!")
+		} else {
+			err := fmt.Errorf("Docker image not exposing port %v!", internalPort)
+			container.err(err)
+			return err
+		}
 	}
+
+	return nil
 }
