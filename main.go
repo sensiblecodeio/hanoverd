@@ -5,23 +5,28 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/codegangsta/cli"
 	"github.com/docker/docker/nat"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
+	"github.com/scraperwiki/hookbot/listen"
 )
 
 // DockerErrorStatus returns the HTTP status code represented by `err` or Status
@@ -53,9 +58,9 @@ type UpdateEvent struct {
 
 // Determine if stdin is connected without blocking
 func IsStdinReadable() bool {
-	syscall.SetNonblock(int(os.Stdin.Fd()), true)
+	unix.SetNonblock(int(os.Stdin.Fd()), true)
 	_, err := os.Stdin.Read([]byte{0})
-	syscall.SetNonblock(int(os.Stdin.Fd()), false)
+	unix.SetNonblock(int(os.Stdin.Fd()), false)
 	return err != io.EOF
 }
 
@@ -81,11 +86,21 @@ func main() {
 			Usage: "specify URI which returns 200 OK when functioning correctly",
 			Value: "/",
 		},
+		cli.StringFlag{
+			Name:  "hookbot",
+			Usage: "url of hookbot websocket endpoint to monitor for updates",
+		},
 	}
 
 	app.Action = ActionRun
 
 	app.RunAndExitOnError()
+}
+
+// Returns true if $HOME/.ssh exists, false otherwise
+func HaveDotSSH() bool {
+	_, err := os.Stat(os.ExpandEnv("${HOME}/.ssha"))
+	return err == nil
 }
 
 func ActionRun(c *cli.Context) {
@@ -95,20 +110,55 @@ func ActionRun(c *cli.Context) {
 	options.env = makeEnv(c.StringSlice("env"))
 	options.statusURI = c.String("status-uri")
 
-	if len(c.Args()) == 0 {
+	if c.GlobalIsSet("hookbot") {
+
+		hookbotRe := regexp.MustCompile("/sub/github.com/repo/([^/]+)/([^/]+)/push/branch/([^/]+)")
+
+		hookbotURLStr := c.GlobalString("hookbot")
+		hookbotURL, err := url.Parse(hookbotURLStr)
+		if err != nil {
+			log.Fatalf("Hookbot URL %q does not parse: %v", hookbotURLStr, err)
+		}
+
+		if !hookbotRe.MatchString(hookbotURL.Path) {
+			log.Fatalf("Hookbot URL path %q does not match %q", hookbotURL.Path, hookbotRe.String())
+		}
+
+		groups := hookbotRe.FindStringSubmatch(hookbotURL.Path)
+		user, repo, branch := groups[1], groups[2], groups[3]
+
+		format := "https://github.com/%s/%s"
+		if HaveDotSSH() {
+			format = "git@github.com:%s/%s"
+		}
+
+		s := ContainerSource{
+			Type:      GithubRepository,
+			githubURL: fmt.Sprintf(format, user, repo),
+			githubRef: branch,
+		}
+		options.source = s
+
+		options.containerArgs = c.Args()
+
+		log.Printf("Hookbot monitoring %v@%v via %v", s.githubURL, s.githubRef, hookbotURL.Host)
+
+	} else if len(c.Args()) == 0 {
 		options.source.Type = BuildCwd
+
 	} else {
-		args := c.Args()
-		// If the first arg is "@", then use the Cwd
-		if args[0] == "@" {
+		first := c.Args().First()
+		args := c.Args()[1:]
+
+		if first == "@" {
+			// If the first arg is "@", then use the Cwd
 			options.source.Type = BuildCwd
-		} else if args[0] == "daemon" {
+		} else if first == "daemon" {
 			RunDaemon()
 		} else {
 			options.source.Type = DockerPull
-			options.source.dockerImageName = args[0]
+			options.source.dockerImageName = first
 		}
-		args = args[1:]
 		options.containerArgs = args
 	}
 
@@ -145,12 +195,16 @@ func ActionRun(c *cli.Context) {
 	originalEvent := UpdateEvent{Source: options.source}
 	events <- originalEvent
 
-	// SIGINT handler
+	if c.GlobalIsSet("hookbot") {
+		go MonitorHookbot(c.GlobalString("hookbot"), events)
+	}
+
+	// SIGHUP handler
 	go func() {
 		sig := make(chan os.Signal)
-		signal.Notify(sig, os.Interrupt)
+		signal.Notify(sig, unix.SIGHUP)
 		for _ = range sig {
-			// For now, SIGINT always means build the working dir.
+			// For now, SIGHUP always means build the working dir.
 			events <- originalEvent
 		}
 	}()
@@ -160,7 +214,7 @@ func ActionRun(c *cli.Context) {
 		defer dying.Fall()
 		defer log.Println("Received SIGTERM")
 		sig := make(chan os.Signal)
-		signal.Notify(sig, syscall.SIGTERM)
+		signal.Notify(sig, unix.SIGTERM)
 		<-sig
 	}()
 
@@ -168,6 +222,42 @@ func ActionRun(c *cli.Context) {
 	go httpInterface(events)
 
 	<-dying.Barrier()
+}
+
+func MonitorHookbot(target string, notify chan<- UpdateEvent) {
+	finish := make(chan struct{})
+	header := http.Header{}
+
+	events, errs := listen.RetryingWatch(target, header, finish)
+
+	log.Println("Monitoring hookbot")
+
+	for ev := range events {
+
+		data := map[string]string{}
+		err := json.Unmarshal(ev, &data)
+		if err != nil {
+			log.Printf("Failed to parse message: %v", err)
+			continue
+		}
+
+		done := make(chan struct{})
+
+		outBound := &UpdateEvent{}
+		outBound.BuildComplete = done
+		outBound.Source.Type = GithubRepository
+		outBound.Source.githubURL = "github.com/scraperwiki/hookbot"
+		outBound.Source.githubRef = data["SHA"]
+
+		notify <- *outBound
+
+		<-done
+		log.Printf("--- Build completed %v ---", outBound.Source.githubRef)
+	}
+
+	for err := range errs {
+		log.Printf("Error in MonitorHookbot: %v", err)
+	}
 }
 
 // Make an env []string from a list of options specified on the cmdline.
@@ -314,9 +404,7 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 				case *docker.Error:
 					// (name) Conflict
 					if err.Status == 409 {
-						// retry
-						log.Printf("Container with name %q exists, using a new name...", c.Name)
-						events <- lastEvent
+						log.Printf("Container with name %q exists, aborting...", c.Name)
 						c.Failed.Fall()
 						return
 					}
