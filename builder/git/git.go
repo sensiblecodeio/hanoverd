@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -77,65 +78,91 @@ type GithubStatus struct {
 
 var ErrSkipGithubEndpoint = errors.New("Github endpoint skipped")
 
-// Creates or updates a mirror of `url` at `git_dir` using `git clone --mirror`
-func gitLocalMirror(url, git_dir string, messages io.Writer) (err error) {
+// Creates or updates a mirror of `url` at `gitDir` using `git clone --mirror`
+func gitLocalMirror(url, gitDir, ref string, messages io.Writer) (err error) {
 
-	err = os.MkdirAll(git_dir, 0777)
+	if _, err := os.Stat(gitDir); err == nil {
+		// Repo already exists, don't need to clone it.
+
+		if gitAlreadyHaveRef(gitDir, ref) {
+			// Sha already exists, don't need to fetch.
+			// log.Printf("Already have ref: %v %v", gitDir, ref)
+			return nil
+		}
+
+		return gitFetch(gitDir, url, messages)
+	}
+
+	err = os.MkdirAll(gitDir, 0777)
 	if err != nil {
-		return
+		return fmt.Errorf("gitLocalMirror: %v", err)
 	}
 
-	cmd := Command(".", "git", "clone", "-q", "--mirror", url, git_dir)
-	cmd.Stdout = messages
-	cmd.Stderr = messages
-	err = cmd.Run()
-
-	if err == nil {
-		log.Println("Cloned", url)
-
-	} else if _, ok := err.(*exec.ExitError); ok {
-
-		done := make(chan struct{})
-		// Try "git remote update"
-
-		cmd := Command(git_dir, "git", "fetch")
-		cmd.Stdout = messages
-		cmd.Stderr = messages
-
-		go func() {
-			err = cmd.Run()
-			log.Printf("Normal completion %v %v", cmd.Args, cmd.Dir)
-			close(done)
-		}()
-
-		const timeout = 1 * time.Minute
-
-		select {
-		case <-done:
-		case <-time.After(timeout):
-			err = cmd.Process.Kill()
-			log.Printf("Killing cmd %+v after %v, error returned: %v", cmd, timeout, err)
-			err = fmt.Errorf("cmd %+v timed out", cmd)
-		}
-
-		if err != nil {
-			// git fetch where there is no update is exit status 1.
-			if err.Error() != "exit status 1" {
-				return
-			}
-		}
-
-		log.Println("Remote updated", url)
-
-	} else {
-		return
-	}
-
-	return
+	return gitClone(url, gitDir, messages)
 }
 
-func gitHaveFile(git_dir, ref, path string) (ok bool, err error) {
-	cmd := Command(git_dir, "git", "show", fmt.Sprintf("%s:%s", ref, path))
+func gitClone(url, gitDir string, messages io.Writer) error {
+	cmd := Command(".", "git", "clone", "-q", "--mirror", url, gitDir)
+	cmd.Stdout = messages
+	cmd.Stderr = messages
+	return cmd.Run()
+}
+
+func gitFetch(gitDir, url string, messages io.Writer) (err error) {
+
+	done := make(chan struct{})
+	// Try "git remote update"
+
+	cmd := Command(gitDir, "git", "fetch", url)
+	cmd.Stdout = messages
+	cmd.Stderr = messages
+
+	go func() {
+		start := time.Now()
+		err = cmd.Run()
+		log.Printf("Normal completion %v in %v", cmd.Args, time.Since(start))
+		close(done)
+	}()
+
+	const timeout = 1 * time.Minute
+
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		err = cmd.Process.Kill()
+		log.Printf("Killing cmd %+v after %v, error returned: %v", cmd, timeout, err)
+		err = fmt.Errorf("cmd %+v timed out", cmd)
+	}
+
+	if err != nil {
+		// git fetch where there is no update is exit status 1.
+		if err.Error() != "exit status 1" {
+			return err
+		}
+	}
+
+	return nil
+}
+
+var ShaLike = regexp.MustCompile("[0-9a-zA-Z]{40}")
+
+// Returns true if ref is sha-like and is in the object database.
+// The "sha-like" condition ensures that refs like `master` are always
+// freshened.
+func gitAlreadyHaveRef(gitDir, sha string) bool {
+	if !ShaLike.MatchString(sha) {
+		return false
+	}
+	cmd := Command(gitDir, "git", "cat-file", "-t", sha)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	err := cmd.Run()
+	return err == nil
+}
+
+func gitHaveFile(gitDir, ref, path string) (ok bool, err error) {
+	cmd := Command(gitDir, "git", "show", fmt.Sprintf("%s:%s", ref, path))
 	cmd.Stdout = nil // don't want to see the contents
 	err = cmd.Run()
 	ok = true
@@ -149,8 +176,8 @@ func gitHaveFile(git_dir, ref, path string) (ok bool, err error) {
 	return ok, err
 }
 
-func gitRevParse(git_dir, ref string) (sha string, err error) {
-	cmd := Command(git_dir, "git", "rev-parse", ref)
+func gitRevParse(gitDir, ref string) (sha string, err error) {
+	cmd := Command(gitDir, "git", "rev-parse", ref)
 	cmd.Stdout = nil // for cmd.Output
 
 	var stdout []byte
@@ -163,8 +190,8 @@ func gitRevParse(git_dir, ref string) (sha string, err error) {
 	return
 }
 
-func gitDescribe(git_dir, ref string) (desc string, err error) {
-	cmd := Command(git_dir, "git", "describe", "--all", "--tags", "--long", ref)
+func gitDescribe(gitDir, ref string) (desc string, err error) {
+	cmd := Command(gitDir, "git", "describe", "--all", "--tags", "--long", ref)
 	cmd.Stdout = nil // for cmd.Output
 
 	var stdout []byte
@@ -178,17 +205,15 @@ func gitDescribe(git_dir, ref string) (desc string, err error) {
 	return
 }
 
-func gitCheckout(git_dir, checkout_dir, ref string) error {
+func gitCheckout(gitDir, checkoutDir, ref string) error {
 
-	err := os.MkdirAll(checkout_dir, 0777)
+	err := os.MkdirAll(checkoutDir, 0777)
 	if err != nil {
 		return err
 	}
 
-	log.Println("Populating", checkout_dir)
-
-	args := []string{"--work-tree", checkout_dir, "checkout", ref, "--", "."}
-	err = Command(git_dir, "git", args...).Run()
+	args := []string{"--work-tree", checkoutDir, "checkout", ref, "--", "."}
+	err = Command(gitDir, "git", args...).Run()
 	if err != nil {
 		return err
 	}
@@ -196,7 +221,7 @@ func gitCheckout(git_dir, checkout_dir, ref string) error {
 	// Set mtimes to time file is most recently affected by a commit.
 	// This is annoying but unfortunately git sets the timestamps to now,
 	// and docker depends on the mtime for cache invalidation.
-	err = gitSetMTimes(git_dir, checkout_dir, ref)
+	err = gitSetMTimes(gitDir, checkoutDir, ref)
 	if err != nil {
 		return err
 	}
@@ -204,7 +229,7 @@ func gitCheckout(git_dir, checkout_dir, ref string) error {
 	return nil
 }
 
-func gitSetMTimes(git_dir, checkout_dir, ref string) error {
+func gitSetMTimes(gitDir, checkoutDir, ref string) error {
 	// From https://github.com/rosylilly/git-set-mtime with tweaks
 	// Copyright (c) 2014 Sho Kusano
 
@@ -229,7 +254,7 @@ func gitSetMTimes(git_dir, checkout_dir, ref string) error {
 	// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 	// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-	lsFiles := Command(git_dir, "git", "ls-tree", "-r", "--name-only", "-z", ref)
+	lsFiles := Command(gitDir, "git", "ls-tree", "-r", "--name-only", "-z", ref)
 	lsFiles.Stdout = nil
 	out, err := lsFiles.Output()
 	if err != nil {
@@ -240,7 +265,7 @@ func gitSetMTimes(git_dir, checkout_dir, ref string) error {
 
 	files := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
 	for _, file := range files {
-		gitLog := Command(git_dir, "git", "log", "-1", "--date=rfc2822",
+		gitLog := Command(gitDir, "git", "log", "-1", "--date=rfc2822",
 			"--format=%cd", ref, "--", file)
 		gitLog.Stdout = nil
 		gitLog.Stderr = os.Stderr
@@ -277,7 +302,7 @@ func gitSetMTimes(git_dir, checkout_dir, ref string) error {
 			dir = filepath.Dir(dir)
 		}
 
-		err = os.Chtimes(checkout_dir+"/"+file, mTime, mTime)
+		err = os.Chtimes(checkoutDir+"/"+file, mTime, mTime)
 		if err != nil {
 			return fmt.Errorf("chtimes: %v", err)
 		}
@@ -286,7 +311,7 @@ func gitSetMTimes(git_dir, checkout_dir, ref string) error {
 	}
 
 	for dir, mTime := range dirMTimes {
-		err = os.Chtimes(checkout_dir+"/"+dir, mTime, mTime)
+		err = os.Chtimes(checkoutDir+"/"+dir, mTime, mTime)
 		if err != nil {
 			return fmt.Errorf("chtimes: %v", err)
 		}
@@ -301,38 +326,39 @@ type BuildDirectory struct {
 }
 
 func PrepBuildDirectory(
-	remote, ref string,
+	gitDir, remote, ref string,
 ) (*BuildDirectory, error) {
 
 	if strings.HasPrefix(remote, "github.com/") {
 		remote = "https://" + remote
 	}
 
-	wd, err := os.Getwd()
+	gitDir, err := filepath.Abs(gitDir)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to obtain working directory")
+		return nil, fmt.Errorf("unable to determine abspath: %v", err)
 	}
 
-	gitDir := path.Join(wd, "src")
-
-	gitLocalMirror(remote, gitDir, os.Stderr)
+	err = gitLocalMirror(remote, gitDir, ref, os.Stderr)
+	if err != nil {
+		return nil, fmt.Errorf("unable to gitLocalMirror: %v", err)
+	}
 
 	rev, err := gitRevParse(gitDir, ref)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to parse rev: %v", err)
+		return nil, fmt.Errorf("unable to parse rev: %v", err)
+	}
+
+	tagName, err := gitDescribe(gitDir, rev)
+	if err != nil {
+		return nil, fmt.Errorf("unable to describe %v: %v", rev, err)
 	}
 
 	shortRev := rev[:10]
 	checkoutPath := path.Join(gitDir, "c/"+shortRev)
 
-	err = gitCheckout(gitDir, checkoutPath, rev)
+	err = checkout(gitDir, checkoutPath, rev)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to checkout: %v", err)
-	}
-
-	tagName, err := gitDescribe(gitDir, rev)
-	if err != nil {
-		return nil, fmt.Errorf("Unable to describe %v: %v", rev, err)
+		return nil, err
 	}
 
 	cleanup := func() {
@@ -343,6 +369,19 @@ func PrepBuildDirectory(
 	}
 
 	return &BuildDirectory{tagName, checkoutPath, cleanup}, nil
+}
+
+func checkout(gitDir, checkoutPath, rev string) error {
+	err := gitCheckout(gitDir, checkoutPath, rev)
+	if err != nil {
+		return fmt.Errorf("failed to checkout: %v", err)
+	}
+
+	err = PrepSubmodules(gitDir, checkoutPath, rev)
+	if err != nil {
+		return fmt.Errorf("failed to prep submodules: %v", err)
+	}
+	return nil
 }
 
 func SafeCleanup(path string) error {
