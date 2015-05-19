@@ -113,7 +113,7 @@ func gitFetch(gitDir, url string, messages io.Writer) (err error) {
 	done := make(chan struct{})
 	// Try "git remote update"
 
-	cmd := Command(gitDir, "git", "fetch", url)
+	cmd := Command(gitDir, "git", "fetch", "-f", url, "*:*")
 	cmd.Stdout = messages
 	cmd.Stderr = messages
 
