@@ -1,15 +1,20 @@
 package git
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/vaughan0/go-ini"
 )
 
-func PrepSubmodules(gitDir, checkoutDir, mainRev string) error {
+func PrepSubmodules(
+	gitDir, checkoutDir, mainRev string,
+) error {
 
 	gitModules := filepath.Join(checkoutDir, ".gitmodules")
 
@@ -26,14 +31,68 @@ func PrepSubmodules(gitDir, checkoutDir, mainRev string) error {
 
 	GetSubmoduleRevs(gitDir, mainRev, submodules)
 
-	for _, submodule := range submodules {
-		err := prepSubmodule(gitDir, checkoutDir, submodule)
-		if err != nil {
-			return err
-		}
-	}
+	errs := make(chan error, len(submodules))
 
+	go func() {
+		defer close(errs)
+
+		var wg sync.WaitGroup
+		defer wg.Wait()
+
+		// Run only NumCPU in parallel
+		semaphore := make(chan struct{}, runtime.NumCPU())
+
+		for _, submodule := range submodules {
+
+			wg.Add(1)
+			go func(submodule Submodule) {
+				defer wg.Done()
+				defer func() { <-semaphore }()
+				semaphore <- struct{}{}
+
+				err := prepSubmodule(gitDir, checkoutDir, submodule)
+				if err != nil {
+					err = fmt.Errorf("processing %v: %v", submodule.Path, err)
+				}
+				errs <- err
+			}(submodule)
+		}
+	}()
+
+	// errs chan has buffer length len(submodules)
+	err = MultipleErrors(errs)
+	if err != nil {
+		return err
+	}
 	return nil
+}
+
+type ErrMultiple struct {
+	errs []error
+}
+
+func (em *ErrMultiple) Error() string {
+	var s []string
+	for _, e := range em.errs {
+		s = append(s, e.Error())
+	}
+	return fmt.Sprint("multiple errors:\n", strings.Join(s, "\n"))
+}
+
+// Read errors out of a channel, counting only the non-nil ones.
+// If there are zero non-nil errs, nil is returned.
+func MultipleErrors(errs <-chan error) error {
+	var em ErrMultiple
+	for e := range errs {
+		if e == nil {
+			continue
+		}
+		em.errs = append(em.errs, e)
+	}
+	if len(em.errs) == 0 {
+		return nil
+	}
+	return &em
 }
 
 // Checkout the working directory of a given submodule.
@@ -41,8 +100,6 @@ func prepSubmodule(
 	mainGitDir, mainCheckoutDir string,
 	submodule Submodule,
 ) error {
-
-	log.Printf("prepSubmodule(%v, %v)", submodule.Path, submodule.URL)
 
 	subGitDir := filepath.Join(mainGitDir, "modules", submodule.Path)
 
@@ -54,7 +111,7 @@ func prepSubmodule(
 	subCheckoutPath := filepath.Join(mainCheckoutDir, submodule.Path)
 
 	// Note: checkout may recurse onto prepSubmodules.
-	err = checkout(subGitDir, subCheckoutPath, submodule.Rev)
+	err = recursiveCheckout(subGitDir, subCheckoutPath, submodule.Rev)
 	if err != nil {
 		return err
 	}

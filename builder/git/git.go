@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 const GIT_BASE_DIR = "repo"
@@ -79,7 +81,15 @@ type GithubStatus struct {
 var ErrSkipGithubEndpoint = errors.New("Github endpoint skipped")
 
 // Creates or updates a mirror of `url` at `gitDir` using `git clone --mirror`
-func gitLocalMirror(url, gitDir, ref string, messages io.Writer) (err error) {
+func gitLocalMirror(
+	url, gitDir, ref string,
+	messages io.Writer,
+) (err error) {
+
+	// When mirroring, allow up to two minutes before giving up.
+	const MirrorTimeout = 2 * time.Minute
+	ctx, done := context.WithTimeout(context.Background(), MirrorTimeout)
+	defer done()
 
 	if _, err := os.Stat(gitDir); err == nil {
 		// Repo already exists, don't need to clone it.
@@ -90,7 +100,7 @@ func gitLocalMirror(url, gitDir, ref string, messages io.Writer) (err error) {
 			return nil
 		}
 
-		return gitFetch(gitDir, url, messages)
+		return gitFetch(ctx, gitDir, url, messages)
 	}
 
 	err = os.MkdirAll(gitDir, 0777)
@@ -98,42 +108,53 @@ func gitLocalMirror(url, gitDir, ref string, messages io.Writer) (err error) {
 		return fmt.Errorf("gitLocalMirror: %v", err)
 	}
 
-	return gitClone(url, gitDir, messages)
+	return gitClone(ctx, url, gitDir, messages)
 }
 
-func gitClone(url, gitDir string, messages io.Writer) error {
+func gitClone(
+	ctx context.Context,
+	url, gitDir string,
+	messages io.Writer,
+) error {
 	cmd := Command(".", "git", "clone", "-q", "--mirror", url, gitDir)
 	cmd.Stdout = messages
 	cmd.Stderr = messages
-	return cmd.Run()
+	return ContextRun(ctx, cmd)
 }
 
-func gitFetch(gitDir, url string, messages io.Writer) (err error) {
+// Run cmd within a net Context.
+// If the context is cancelled or times out, the process is killed.
+func ContextRun(ctx context.Context, cmd *exec.Cmd) error {
+	errc := make(chan error)
 
-	done := make(chan struct{})
-	// Try "git remote update"
+	err := cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	go func() { errc <- cmd.Wait() }()
+
+	select {
+	case <-ctx.Done():
+		cmd.Process.Kill()
+		return ctx.Err()
+	case err := <-errc:
+		return err // err may be nil
+	}
+	return nil
+}
+
+func gitFetch(
+	ctx context.Context,
+	gitDir, url string,
+	messages io.Writer,
+) (err error) {
 
 	cmd := Command(gitDir, "git", "fetch", "-f", url, "*:*")
 	cmd.Stdout = messages
 	cmd.Stderr = messages
 
-	go func() {
-		start := time.Now()
-		err = cmd.Run()
-		log.Printf("Normal completion %v in %v", cmd.Args, time.Since(start))
-		close(done)
-	}()
-
-	const timeout = 1 * time.Minute
-
-	select {
-	case <-done:
-	case <-time.After(timeout):
-		err = cmd.Process.Kill()
-		log.Printf("Killing cmd %+v after %v, error returned: %v", cmd, timeout, err)
-		err = fmt.Errorf("cmd %+v timed out", cmd)
-	}
-
+	err = ContextRun(ctx, cmd)
 	if err != nil {
 		// git fetch where there is no update is exit status 1.
 		if err.Error() != "exit status 1" {
@@ -221,7 +242,7 @@ func gitCheckout(gitDir, checkoutDir, ref string) error {
 	// Set mtimes to time file is most recently affected by a commit.
 	// This is annoying but unfortunately git sets the timestamps to now,
 	// and docker depends on the mtime for cache invalidation.
-	err = gitSetMTimes(gitDir, checkoutDir, ref)
+	err = GitSetMTimes(gitDir, checkoutDir, ref)
 	if err != nil {
 		return err
 	}
@@ -229,30 +250,12 @@ func gitCheckout(gitDir, checkoutDir, ref string) error {
 	return nil
 }
 
-func gitSetMTimes(gitDir, checkoutDir, ref string) error {
-	// From https://github.com/rosylilly/git-set-mtime with tweaks
-	// Copyright (c) 2014 Sho Kusano
+func GitSetMTimes(gitDir, checkoutDir, ref string) error {
 
-	// MIT License
-
-	// Permission is hereby granted, free of charge, to any person obtaining
-	// a copy of this software and associated documentation files (the
-	// "Software"), to deal in the Software without restriction, including
-	// without limitation the rights to use, copy, modify, merge, publish,
-	// distribute, sublicense, and/or sell copies of the Software, and to
-	// permit persons to whom the Software is furnished to do so, subject to
-	// the following conditions:
-
-	// The above copyright notice and this permission notice shall be
-	// included in all copies or substantial portions of the Software.
-
-	// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-	// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-	// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-	// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-	// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-	// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-	// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+	commitTimes, err := GitCommitTimes(gitDir, ref)
+	if err != nil {
+		return err
+	}
 
 	lsFiles := Command(gitDir, "git", "ls-tree", "-r", "--name-only", "-z", ref)
 	lsFiles.Stdout = nil
@@ -265,20 +268,9 @@ func gitSetMTimes(gitDir, checkoutDir, ref string) error {
 
 	files := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
 	for _, file := range files {
-		gitLog := Command(gitDir, "git", "log", "-1", "--date=rfc2822",
-			"--format=%cd", ref, "--", file)
-		gitLog.Stdout = nil
-		gitLog.Stderr = os.Stderr
-
-		out, err := gitLog.Output()
-		if err != nil {
-			return fmt.Errorf("git log: %v", err)
-		}
-
-		mStr := strings.TrimSpace(strings.TrimLeft(string(out), "Date:"))
-		mTime, err := time.Parse("Mon, 2 Jan 2006 15:04:05 -0700", mStr)
-		if err != nil {
-			return fmt.Errorf("parse time: %v", err)
+		mTime, ok := commitTimes[file]
+		if !ok {
+			return fmt.Errorf("failed to find file in history: %q", file)
 		}
 
 		// Loop over each directory in the path to `file`, updating `dirMTimes`
@@ -302,7 +294,7 @@ func gitSetMTimes(gitDir, checkoutDir, ref string) error {
 			dir = filepath.Dir(dir)
 		}
 
-		err = os.Chtimes(checkoutDir+"/"+file, mTime, mTime)
+		err = os.Chtimes(filepath.Join(checkoutDir, file), mTime, mTime)
 		if err != nil {
 			return fmt.Errorf("chtimes: %v", err)
 		}
@@ -311,7 +303,7 @@ func gitSetMTimes(gitDir, checkoutDir, ref string) error {
 	}
 
 	for dir, mTime := range dirMTimes {
-		err = os.Chtimes(checkoutDir+"/"+dir, mTime, mTime)
+		err = os.Chtimes(filepath.Join(checkoutDir, dir), mTime, mTime)
 		if err != nil {
 			return fmt.Errorf("chtimes: %v", err)
 		}
@@ -328,6 +320,11 @@ type BuildDirectory struct {
 func PrepBuildDirectory(
 	gitDir, remote, ref string,
 ) (*BuildDirectory, error) {
+
+	start := time.Now()
+	defer func() {
+		log.Printf("Took %v to prep %v", time.Since(start), remote)
+	}()
 
 	if strings.HasPrefix(remote, "github.com/") {
 		remote = "https://" + remote
@@ -354,9 +351,9 @@ func PrepBuildDirectory(
 	}
 
 	shortRev := rev[:10]
-	checkoutPath := path.Join(gitDir, "c/"+shortRev)
+	checkoutPath := path.Join(gitDir, filepath.Join("c/", shortRev))
 
-	err = checkout(gitDir, checkoutPath, rev)
+	err = recursiveCheckout(gitDir, checkoutPath, rev)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +368,7 @@ func PrepBuildDirectory(
 	return &BuildDirectory{tagName, checkoutPath, cleanup}, nil
 }
 
-func checkout(gitDir, checkoutPath, rev string) error {
+func recursiveCheckout(gitDir, checkoutPath, rev string) error {
 	err := gitCheckout(gitDir, checkoutPath, rev)
 	if err != nil {
 		return fmt.Errorf("failed to checkout: %v", err)
