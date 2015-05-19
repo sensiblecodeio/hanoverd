@@ -5,7 +5,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -14,11 +13,9 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path"
 	"regexp"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 
@@ -26,7 +23,7 @@ import (
 	"github.com/docker/docker/nat"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
-	"github.com/scraperwiki/hookbot/listen"
+	"github.com/scraperwiki/hookbot/pkg/listen"
 )
 
 // DockerErrorStatus returns the HTTP status code represented by `err` or Status
@@ -51,8 +48,10 @@ type Options struct {
 }
 
 type UpdateEvent struct {
-	Source        ContainerSource
+	// Source        ContainerSource
+	Payload       []byte // input
 	OutputStream  io.Writer
+	Obtained      barrier.Barrier
 	BuildComplete chan<- struct{}
 }
 
@@ -97,18 +96,15 @@ func main() {
 	app.RunAndExitOnError()
 }
 
-// Returns true if $HOME/.ssh exists, false otherwise
-func HaveDotSSH() bool {
-	_, err := os.Stat(os.ExpandEnv("${HOME}/.ssha"))
-	return err == nil
-}
-
 func ActionRun(c *cli.Context) {
 	var err error
 
 	options := Options{}
 	options.env = makeEnv(c.StringSlice("env"))
 	options.statusURI = c.String("status-uri")
+
+	containerName := "hanoverd"
+	var imageSource ImageSource
 
 	if c.GlobalIsSet("hookbot") {
 
@@ -125,23 +121,18 @@ func ActionRun(c *cli.Context) {
 		}
 
 		groups := hookbotRe.FindStringSubmatch(hookbotURL.Path)
-		user, repo, branch := groups[1], groups[2], groups[3]
+		user, repository, branch := groups[1], groups[2], groups[3]
 
-		format := "https://github.com/%s/%s"
-		if HaveDotSSH() {
-			format = "git@github.com:%s/%s"
-		}
-
-		s := ContainerSource{
-			Type:      GithubRepository,
-			githubURL: fmt.Sprintf(format, user, repo),
-			githubRef: branch,
-		}
-		options.source = s
-
+		containerName = repository
 		options.containerArgs = c.Args()
 
-		log.Printf("Hookbot monitoring %v@%v via %v", s.githubURL, s.githubRef, hookbotURL.Host)
+		imageSource = &GithubSource{
+			User:          user,
+			Repository:    repository,
+			InitialBranch: branch,
+		}
+
+		log.Printf("Hookbot monitoring %v@%v via %v", imageSource)
 
 	} else if len(c.Args()) == 0 {
 		options.source.Type = BuildCwd
@@ -191,40 +182,44 @@ func ActionRun(c *cli.Context) {
 		}()
 	}
 
-	events := make(chan UpdateEvent, 1)
-	originalEvent := UpdateEvent{Source: options.source}
+	events := make(chan *UpdateEvent, 1)
+	originalEvent := &UpdateEvent{}
 	events <- originalEvent
-
-	if c.GlobalIsSet("hookbot") {
-		go MonitorHookbot(c.GlobalString("hookbot"), events)
-	}
 
 	// SIGHUP handler
 	go func() {
 		sig := make(chan os.Signal)
 		signal.Notify(sig, unix.SIGHUP)
-		for _ = range sig {
-			// For now, SIGHUP always means build the working dir.
+		for value := range sig {
+			log.Printf("Received signal %s", value)
+			// Resend the original event
 			events <- originalEvent
 		}
 	}()
 
-	// SIGTERM handler
+	// SIGTERM, SIGINT handler
 	go func() {
 		defer dying.Fall()
-		defer log.Println("Received SIGTERM")
+
+		var value os.Signal
+
+		defer log.Printf("Received signal %v", value)
+
 		sig := make(chan os.Signal)
-		signal.Notify(sig, unix.SIGTERM)
-		<-sig
+		signal.Notify(sig, unix.SIGTERM, unix.SIGINT)
+		value = <-sig
 	}()
 
-	go loop(&wg, &dying, options, events)
-	go httpInterface(events)
+	if c.GlobalIsSet("hookbot") {
+		go MonitorHookbot(c.GlobalString("hookbot"), events)
+	}
+
+	go loop(containerName, imageSource, &wg, &dying, options, events)
 
 	<-dying.Barrier()
 }
 
-func MonitorHookbot(target string, notify chan<- UpdateEvent) {
+func MonitorHookbot(target string, notify chan<- *UpdateEvent) {
 	finish := make(chan struct{})
 	header := http.Header{}
 
@@ -232,27 +227,31 @@ func MonitorHookbot(target string, notify chan<- UpdateEvent) {
 
 	log.Println("Monitoring hookbot")
 
-	for ev := range events {
+	for payload := range events {
 
-		data := map[string]string{}
-		err := json.Unmarshal(ev, &data)
-		if err != nil {
-			log.Printf("Failed to parse message: %v", err)
-			continue
-		}
+		log.Printf("Signalled via hookbot")
+		// data := map[string]string{}
+		// err := json.Unmarshal(ev, &data)
+		// if err != nil {
+		// 	log.Printf("Failed to parse message: %v", err)
+		// 	continue
+		// }
 
 		done := make(chan struct{})
 
 		outBound := &UpdateEvent{}
 		outBound.BuildComplete = done
-		outBound.Source.Type = GithubRepository
-		outBound.Source.githubURL = "github.com/scraperwiki/hookbot"
-		outBound.Source.githubRef = data["SHA"]
+		outBound.Payload = payload
+		// outBound.Source.Type = GithubRepository
+		// outBound.Source.githubURL = "github.com/scraperwiki/hookbot"
+		// outBound.Source.githubRef = data["SHA"]
 
-		notify <- *outBound
+		notify <- outBound
 
-		<-done
-		log.Printf("--- Build completed %v ---", outBound.Source.githubRef)
+		<-outBound.Obtained.Barrier()
+
+		// <-done
+		log.Printf("--- Build completed %v ---", "TODO(pwaller): Determine name from payload")
 	}
 
 	for err := range errs {
@@ -271,55 +270,6 @@ func makeEnv(opts []string) []string {
 		}
 	}
 	return env
-}
-
-func httpInterface(events chan<- UpdateEvent) {
-	http.HandleFunc("/update", func(w http.ResponseWriter, r *http.Request) {
-
-		buildComplete := make(chan struct{})
-		event := UpdateEvent{
-			OutputStream:  NewFlushWriter(w),
-			BuildComplete: buildComplete,
-		}
-
-		switch r.Method {
-		case "POST":
-			var (
-				reader io.Reader
-				err    error
-			)
-
-			switch r.Header.Get("Content-Type") {
-			default:
-				const msg = "Unrecognized Content-Type. Should be application/zip or application/x-tar (or x-bzip2 or gzip)"
-				http.Error(w, msg, http.StatusBadRequest)
-				return
-			case "application/zip":
-				reader, err = zip2tar(r.Body)
-				if err != nil {
-					const msg = "Problem whilst reading zip input"
-					http.Error(w, msg, http.StatusBadRequest)
-					return
-				}
-
-			case "application/x-bzip2", "application/x-tar":
-				reader = r.Body
-			}
-
-			event.Source = ContainerSource{
-				Type:                BuildTarballContent,
-				buildTarballContent: reader,
-			}
-		default:
-			fmt.Fprintln(w, "Signal build $PWD")
-		}
-
-		events <- event
-		// Only wait on buildComplete when we know we got as far as requesting
-		// the build.
-		<-buildComplete
-	})
-	http.ListenAndServe("localhost:9123", nil)
 }
 
 func dockerConnect() (*docker.Client, error) {
@@ -350,7 +300,14 @@ func dockerConnect() (*docker.Client, error) {
 }
 
 // Main loop managing the lifecycle of all containers.
-func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events chan UpdateEvent) {
+func loop(
+	containerName string,
+	imageSource ImageSource,
+	wg *sync.WaitGroup,
+	dying *barrier.Barrier,
+	options Options,
+	events <-chan *UpdateEvent,
+) {
 	client, err := dockerConnect()
 	if err != nil {
 		dying.Fall()
@@ -358,29 +315,24 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 		return
 	}
 
-	wd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-	baseName := path.Base(wd)
-
-	var i uint64
-	getName := func() string {
-		n := atomic.AddUint64(&i, 1)
-		return fmt.Sprint(baseName, "_", n)
-	}
-
 	flips := make(chan *Container)
-	go Flipper(wg, options, flips)
+	go flipper(wg, options, flips)
+
+	var i int
 
 	for event := range events {
 
-		log.Printf("New container starting")
+		name := fmt.Sprint(containerName, "_", i)
+		i++
 
-		c := NewContainer(client, getName(), wg)
+		log.Printf("New container starting: %q", name)
+
+		c := NewContainer(client, name, wg)
 		c.Args = options.containerArgs
 		c.Env = options.env
 		c.StatusURI = options.statusURI
+
+		c.Obtained.Forward(&event.Obtained)
 
 		// Global exit should cause container exit
 		dying.Forward(&c.Closing)
@@ -389,30 +341,9 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 		go func(c *Container) {
 			defer wg.Done()
 
-			go func() {
-				for err := range c.Errors {
-					log.Println("BUG: Async container error:", err)
-					// TODO(pwaller): If this case is hit we might not want to
-					// tear the container down really.
-					c.Failed.Fall()
-				}
-			}()
-
-			status, err := c.Run(event)
+			status, err := c.Run(imageSource, event.Payload)
 			if err != nil {
-				switch err := err.(type) {
-				case *docker.Error:
-					// (name) Conflict
-					if err.Status == 409 {
-						// retry
-						log.Printf("Container with name %q exists, using a new name...", c.Name)
-						events <- event
-						c.Failed.Fall()
-						return
-					}
-				}
 				log.Println("Container run failed:", strings.TrimSpace(err.Error()))
-				c.Failed.Fall()
 				return
 			}
 			log.Println("container", c.Name, "quit, exit status:", status)
@@ -446,13 +377,19 @@ func loop(wg *sync.WaitGroup, dying *barrier.Barrier, options Options, events ch
 	}
 }
 
-func Flipper(wg *sync.WaitGroup, options Options, newContainers <-chan *Container) {
+// Manage firewall flips
+func flipper(
+	wg *sync.WaitGroup,
+	options Options,
+	newContainers <-chan *Container,
+) {
 	var live *Container
 
 	for container := range newContainers {
 
 		err := flip(wg, options, container)
 		if err != nil {
+			container.Failed.Fall()
 			// Don't flip the firewall rules if there was a problem.
 			continue
 		}

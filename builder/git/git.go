@@ -295,9 +295,14 @@ func gitSetMTimes(git_dir, checkout_dir, ref string) error {
 	return nil
 }
 
+type BuildDirectory struct {
+	Name, Dir string
+	Cleanup   func()
+}
+
 func PrepBuildDirectory(
 	remote, ref string,
-) (buildDir, buildName string, cleanup func()) {
+) (*BuildDirectory, error) {
 
 	if strings.HasPrefix(remote, "github.com/") {
 		remote = "https://" + remote
@@ -305,8 +310,7 @@ func PrepBuildDirectory(
 
 	wd, err := os.Getwd()
 	if err != nil {
-		log.Println("Failed to obtain working directory")
-		return
+		return nil, fmt.Errorf("Failed to obtain working directory")
 	}
 
 	gitDir := path.Join(wd, "src")
@@ -315,8 +319,7 @@ func PrepBuildDirectory(
 
 	rev, err := gitRevParse(gitDir, ref)
 	if err != nil {
-		log.Printf("Unable to parse rev: %v", err)
-		return
+		return nil, fmt.Errorf("Unable to parse rev: %v", err)
 	}
 
 	shortRev := rev[:10]
@@ -324,24 +327,22 @@ func PrepBuildDirectory(
 
 	err = gitCheckout(gitDir, checkoutPath, rev)
 	if err != nil {
-		log.Printf("Failed to checkout: %v", err)
-		return
+		return nil, fmt.Errorf("Failed to checkout: %v", err)
 	}
 
 	tagName, err := gitDescribe(gitDir, rev)
 	if err != nil {
-		log.Printf("Unable to describe %v: %v", rev, err)
-		return
+		return nil, fmt.Errorf("Unable to describe %v: %v", rev, err)
 	}
 
-	cleanup = func() {
+	cleanup := func() {
 		err := SafeCleanup(checkoutPath)
 		if err != nil {
-			log.Println("Error cleaning up path: ", checkoutPath)
+			log.Printf("Error cleaning up path: ", checkoutPath)
 		}
 	}
 
-	return checkoutPath, tagName, cleanup
+	return &BuildDirectory{tagName, checkoutPath, cleanup}, nil
 }
 
 func SafeCleanup(path string) error {
