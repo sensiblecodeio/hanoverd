@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -38,23 +39,23 @@ func (s *RegistrySource) Obtain(c *docker.Client, payload []byte) (string, error
 	return s.ImageName, nil
 }
 
-type GithubSource struct {
-	User, Repository, InitialBranch string
+type GitHostSource struct {
+	Host, User, Repository, InitialBranch string
 }
 
-func (s *GithubSource) CloneURL() string {
+func (s *GitHostSource) CloneURL() string {
 
-	format := "https://github.com/%s/%s"
+	format := "https://%s/%s/%s"
 	if HaveDotSSH() {
-		format = "ssh://git@github.com:%s/%s"
+		format = "ssh://git@%s/%s/%s"
 	}
 
-	return fmt.Sprintf(format, s.User, s.Repository)
+	return fmt.Sprintf(format, s.Host, s.User, s.Repository)
 }
 
 // Return the git SHA from the given hook payload, if we have a hook payload,
 // otherwise return the InitialBranch.
-func (s *GithubSource) Ref(payload []byte) (string, error) {
+func (s *GitHostSource) Ref(payload []byte) (string, error) {
 	if len(payload) == 0 {
 		return s.InitialBranch, nil
 	}
@@ -71,12 +72,20 @@ func (s *GithubSource) Ref(payload []byte) (string, error) {
 	return v.SHA, nil
 }
 
-func (s *GithubSource) Obtain(c *docker.Client, payload []byte) (string, error) {
+func (s *GitHostSource) Obtain(c *docker.Client, payload []byte) (string, error) {
 	// Obtain/update local mirrorformat
 
 	ref, err := s.Ref(payload)
+	if err != nil {
+		return "", err
+	}
 
-	build, err := git.PrepBuildDirectory(s.CloneURL(), ref)
+	gitDir, err := filepath.Abs(filepath.Join(".", "src", s.Host, s.User, s.Repository))
+	if err != nil {
+		return "", err
+	}
+
+	build, err := git.PrepBuildDirectory(gitDir, s.CloneURL(), ref)
 	if err != nil {
 		return "", nil
 	}

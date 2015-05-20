@@ -108,7 +108,7 @@ func ActionRun(c *cli.Context) {
 
 	if c.GlobalIsSet("hookbot") {
 
-		hookbotRe := regexp.MustCompile("/sub/github.com/repo/([^/]+)/([^/]+)/push/branch/([^/]+)")
+		hookbotRe := regexp.MustCompile("/sub/([^/]+)/repo/([^/]+)/([^/]+)/branch/([^/]+)")
 
 		hookbotURLStr := c.GlobalString("hookbot")
 		hookbotURL, err := url.Parse(hookbotURLStr)
@@ -121,18 +121,19 @@ func ActionRun(c *cli.Context) {
 		}
 
 		groups := hookbotRe.FindStringSubmatch(hookbotURL.Path)
-		user, repository, branch := groups[1], groups[2], groups[3]
+		host, user, repository, branch := groups[1], groups[2], groups[3], groups[4]
 
 		containerName = repository
 		options.containerArgs = c.Args()
 
-		imageSource = &GithubSource{
+		imageSource = &GitHostSource{
+			Host:          host,
 			User:          user,
 			Repository:    repository,
 			InitialBranch: branch,
 		}
 
-		log.Printf("Hookbot monitoring %v@%v via %v", imageSource)
+		log.Printf("Hookbot monitoring %v@%v via %v", repository, branch, hookbotURL.Host)
 
 	} else if len(c.Args()) == 0 {
 		options.source.Type = BuildCwd
