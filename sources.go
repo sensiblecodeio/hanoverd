@@ -29,14 +29,13 @@ func (s *CwdSource) Obtain(c *docker.Client, payload []byte) (string, error) {
 	return "", fmt.Errorf("not implemented: CwdSource.Obtain")
 }
 
-type RegistrySource struct {
-	ImageName string // `localhost.localdomain:5000/image:tag
+type DockerPullSource struct {
+	Repository, Tag string
 }
 
-func (s *RegistrySource) Obtain(c *docker.Client, payload []byte) (string, error) {
-	// docker pull s.ImageName
-	return "", fmt.Errorf("not implemented: RegistrySource.Obtain")
-	return s.ImageName, nil
+func (s *DockerPullSource) Obtain(c *docker.Client, payload []byte) (string, error) {
+	return fmt.Sprintf("%s:%s", s.Repository, s.Tag), nil
+	return "", fmt.Errorf("not implemented: DockerPullSource.Obtain(%v, %v)", s.Repository, s.Tag)
 }
 
 type GitHostSource struct {

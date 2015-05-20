@@ -10,10 +10,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -108,32 +106,13 @@ func ActionRun(c *cli.Context) {
 
 	if c.GlobalIsSet("hookbot") {
 
-		hookbotRe := regexp.MustCompile("/sub/([^/]+)/repo/([^/]+)/([^/]+)/branch/([^/]+)")
-
-		hookbotURLStr := c.GlobalString("hookbot")
-		hookbotURL, err := url.Parse(hookbotURLStr)
+		hookbotURL := c.GlobalString("hookbot")
+		containerName, imageSource, err = GetSourceFromHookbot(hookbotURL)
 		if err != nil {
-			log.Fatalf("Hookbot URL %q does not parse: %v", hookbotURLStr, err)
+			log.Fatal("Failed to parse hookbot source: %v", err)
 		}
 
-		if !hookbotRe.MatchString(hookbotURL.Path) {
-			log.Fatalf("Hookbot URL path %q does not match %q", hookbotURL.Path, hookbotRe.String())
-		}
-
-		groups := hookbotRe.FindStringSubmatch(hookbotURL.Path)
-		host, user, repository, branch := groups[1], groups[2], groups[3], groups[4]
-
-		containerName = repository
 		options.containerArgs = c.Args()
-
-		imageSource = &GitHostSource{
-			Host:          host,
-			User:          user,
-			Repository:    repository,
-			InitialBranch: branch,
-		}
-
-		log.Printf("Hookbot monitoring %v@%v via %v", repository, branch, hookbotURL.Host)
 
 	} else if len(c.Args()) == 0 {
 		options.source.Type = BuildCwd
