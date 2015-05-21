@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,8 +36,37 @@ type DockerPullSource struct {
 }
 
 func (s *DockerPullSource) Obtain(c *docker.Client, payload []byte) (string, error) {
-	return fmt.Sprintf("%s:%s", s.Repository, s.Tag), nil
-	return "", fmt.Errorf("not implemented: DockerPullSource.Obtain(%v, %v)", s.Repository, s.Tag)
+
+	opts := docker.PullImageOptions{
+		Repository:    s.Repository,
+		Tag:           s.Tag,
+		RawJSONStream: true,
+	}
+
+	// TODO(pwaller): Send the output somewhere better
+	target := os.Stderr
+
+	outputStream, errorC := PullProgressCopier(target)
+	opts.OutputStream = outputStream
+
+	// TODO(pwaller):
+	// I don't use auth, just a daemon listening only on localhost,
+	// so this remains unimplemented.
+	var auth docker.AuthConfiguration
+	err := c.PullImage(opts, auth)
+
+	outputStream.Close()
+
+	if err != nil {
+		return "", err
+	}
+
+	imageName := fmt.Sprintf("%s:%s", s.Repository, s.Tag)
+	return imageName, <-errorC
+
+	// c.PullImage(opts)
+	// return , nil
+	// return "", fmt.Errorf("not implemented: DockerPullSource.Obtain(%v, %v)", s.Repository, s.Tag)
 }
 
 type GitHostSource struct {
@@ -114,39 +145,6 @@ func DockerBuildDirectory(c *docker.Client, name, path string) error {
 	})
 }
 
-// Generate a docker image. This can be done through various mechanisms in
-// response to an UpdateEvent (see SourceType constant declarations).
-func (c *Container) Build(config UpdateEvent) error {
-	// if config.BuildComplete != nil {
-	// 	defer close(config.BuildComplete)
-	// }
-
-	// var err error
-	// bo := docker.BuildImageOptions{}
-	// bo.Name = c.Name
-	// bo.OutputStream = config.OutputStream
-	// if bo.OutputStream == nil {
-	// 	bo.OutputStream = os.Stderr
-	// }
-
-	// switch config.Source.Type {
-	// case GithubRepository:
-	// 	bo.ContextDir = config.Source.buildDirectory
-	// case BuildCwd:
-	// 	bo.ContextDir, err = os.Getwd()
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// case BuildTarballContent:
-	// 	bo.InputStream = config.Source.buildTarballContent
-	// default:
-	// 	return fmt.Errorf("Unimplemented ContainerSource: %v", config.Source.Type)
-	// }
-
-	// return c.client.BuildImage(bo)
-	return nil
-}
-
 func PullProgressCopier(target io.Writer) (io.WriteCloser, <-chan error) {
 	reader, wrappedWriter := io.Pipe()
 	errorC := make(chan error)
@@ -213,7 +211,7 @@ func PullProgressCopier(target io.Writer) (io.WriteCloser, <-chan error) {
 				return
 			}
 			if err != nil {
-				log.Print("decode failure in  ", err)
+				log.Print("decode failure in", err)
 				return
 			}
 		}
@@ -221,42 +219,16 @@ func PullProgressCopier(target io.Writer) (io.WriteCloser, <-chan error) {
 	return wrappedWriter, errorC
 }
 
-// Pull an image from a docker repository.
-func (c *Container) Pull(config UpdateEvent) error {
-	// if config.BuildComplete != nil {
-	// 	defer close(config.BuildComplete)
-	// }
+func ParseRegistryImage(fullName string) (registry, repository string) {
+	var (
+		DotBeforeSlash = regexp.MustCompile("^[^/]+\\.[^/]+/")
+	)
 
-	// parts := strings.SplitN(config.Source.dockerImageName, ":", 2)
+	if DotBeforeSlash.MatchString(fullName) {
+		parts := strings.SplitN(fullName, "/", 2)
+		return parts[0], parts[1]
+	}
 
-	// pio := docker.PullImageOptions{}
-
-	// pio.Repository = parts[0]
-	// pio.Tag = "latest"
-	// if len(parts) == 2 {
-	// 	pio.Tag = parts[1]
-	// }
-	// pio.Registry = ""
-	// pio.RawJSONStream = true
-
-	// log.Println("Pulling", pio.Repository)
-
-	// target := config.OutputStream
-	// if target == nil {
-	// 	target = os.Stderr
-	// }
-
-	// outputStream, errorC := PullProgressCopier(target)
-	// pio.OutputStream = outputStream
-
-	// pullImageErr := c.client.PullImage(pio, docker.AuthConfiguration{})
-
-	// outputStream.Close()
-
-	// if pullImageErr != nil {
-	// 	return pullImageErr
-	// }
-
-	// return <-errorC
-	return nil
+	// No registry specified
+	return "", fullName
 }
