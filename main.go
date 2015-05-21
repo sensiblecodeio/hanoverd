@@ -91,7 +91,111 @@ func main() {
 
 	app.Action = ActionRun
 
+	app.Commands = []cli.Command{
+		{
+			Name:   "builder",
+			Action: ActionBuilder,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "listen",
+					Usage: "url of hookbot websocket endpoint to monitor for updates",
+				},
+				cli.StringFlag{
+					Name:  "docker-notify",
+					Usage: "url of hookbot pub endpoint to notify on complete build",
+				},
+			},
+		},
+	}
+
 	app.RunAndExitOnError()
+}
+
+func ActionBuilder(c *cli.Context) {
+	_, imageSource, err := GetSourceFromHookbot(c.String("listen"))
+	if err != nil {
+		log.Fatalf("Failed to parse hookbot listen URL: %v", err)
+	}
+
+	repository, tag, err := ParseHookbotDockerPullPubEndpoint(c.String("docker-notify"))
+	if err != nil {
+		log.Fatalf("Failed to parse hookbot notify URL: %v", err)
+	}
+
+	tagOpts := docker.TagImageOptions{Repo: repository, Tag: tag}
+	tagOpts.Force = true
+
+	registry, imageName := ParseRegistryImage(repository)
+	log.Printf("Registry: %v, image: %v", registry, imageName)
+
+	client, err := dockerConnect()
+	if err != nil {
+		log.Fatalf("Unable to connect to docker: %v", err)
+	}
+
+	finish := make(chan struct{})
+	header := http.Header{}
+	events, errs := listen.RetryingWatch(c.String("listen"), header, finish)
+
+	go func() {
+		defer close(finish)
+
+		for err := range errs {
+			log.Printf("Error in hookbot event stream: %v", err)
+		}
+
+		log.Printf("Error stream finished")
+	}()
+
+	build := func() error {
+		name, err := imageSource.Obtain(client, []byte{})
+		if err != nil {
+			return fmt.Errorf("obtain: %v", err)
+		}
+
+		log.Printf("Tag image...")
+		err = client.TagImage(name, tagOpts)
+		if err != nil {
+			return fmt.Errorf("tagimage: %v", err)
+		}
+
+		opts := docker.PushImageOptions{
+			// Registry:     registry,
+			Name:         repository,
+			Tag:          tagOpts.Tag,
+			OutputStream: os.Stderr,
+		}
+
+		log.Printf("Push image...")
+		err = client.PushImage(opts, docker.AuthConfiguration{})
+		if err != nil {
+			return fmt.Errorf("pushimage: %v", err)
+		}
+
+		log.Printf("Notify docker endpoint...")
+		resp, err := http.Post(c.String("docker-notify"), "text/plain", strings.NewReader("UPDATE\n"))
+		if err != nil {
+			return fmt.Errorf("notify hookbot of push: %v", err)
+		}
+		log.Printf("Response from notify: %v", resp.StatusCode)
+		return nil
+	}
+
+	err = build()
+	if err != nil {
+		log.Printf("Build failed: %v", err)
+	}
+
+	for range events {
+		log.Printf("Event!")
+
+		err := build()
+		if err != nil {
+			log.Printf("Build failed: %v", err)
+		}
+	}
+
+	log.Printf("Event stream finished")
 }
 
 func ActionRun(c *cli.Context) {
@@ -202,10 +306,15 @@ func ActionRun(c *cli.Context) {
 func MonitorHookbot(target string, notify chan<- *UpdateEvent) {
 	finish := make(chan struct{})
 	header := http.Header{}
-
 	events, errs := listen.RetryingWatch(target, header, finish)
 
 	log.Println("Monitoring hookbot")
+
+	go func() {
+		for err := range errs {
+			log.Printf("Error in MonitorHookbot: %v", err)
+		}
+	}()
 
 	for payload := range events {
 
@@ -232,10 +341,6 @@ func MonitorHookbot(target string, notify chan<- *UpdateEvent) {
 
 		// <-done
 		log.Printf("--- Build completed %v ---", "TODO(pwaller): Determine name from payload")
-	}
-
-	for err := range errs {
-		log.Printf("Error in MonitorHookbot: %v", err)
 	}
 }
 
