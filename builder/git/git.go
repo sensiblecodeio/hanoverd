@@ -103,9 +103,9 @@ func gitLocalMirror(
 		return gitFetch(ctx, gitDir, url, messages)
 	}
 
-	err = os.MkdirAll(gitDir, 0777)
+	err = os.MkdirAll(filepath.Dir(gitDir), 0777)
 	if err != nil {
-		return fmt.Errorf("gitLocalMirror: %v", err)
+		return err
 	}
 
 	return gitClone(ctx, url, gitDir, messages)
