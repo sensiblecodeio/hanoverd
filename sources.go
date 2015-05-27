@@ -117,7 +117,7 @@ func (s *GitHostSource) Obtain(c *docker.Client, payload []byte) (string, error)
 
 	build, err := git.PrepBuildDirectory(gitDir, s.CloneURL(), ref)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	defer build.Cleanup()
 
