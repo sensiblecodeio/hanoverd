@@ -3,4 +3,9 @@ buildtime: .PHONY
 	docker run --rm hanoverd-buildtime cat /go/bin/hanoverd > ./hanoverd
 	chmod u+x ./hanoverd
 
-.PHONY:
+release: buildtime .FORCE
+	mv hanoverd hanoverd_linux_amd64
+	gphr release -keep=true hanoverd_linux_amd64
+
+.FORCE:
+.PHONY: .FORCE release
