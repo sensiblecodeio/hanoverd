@@ -76,7 +76,7 @@ type GitHostSource struct {
 func (s *GitHostSource) CloneURL() string {
 
 	format := "https://%s/%s/%s"
-	if HaveDotSSH() {
+	if HaveSSHKey() {
 		format = "ssh://git@%s/%s/%s"
 	}
 
@@ -132,9 +132,14 @@ func (s *GitHostSource) Obtain(c *docker.Client, payload []byte) (string, error)
 }
 
 // Returns true if $HOME/.ssh exists, false otherwise
-func HaveDotSSH() bool {
-	_, err := os.Stat(os.ExpandEnv("${HOME}/.ssh"))
-	return err == nil
+func HaveSSHKey() bool {
+	for _, filename := range []string{"id_dsa", "id_ecdsa", "id_rsa"} {
+		path := os.ExpandEnv(filepath.Join("$HOME/.ssh", filename))
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func DockerBuildDirectory(c *docker.Client, name, path string) error {
