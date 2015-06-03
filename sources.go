@@ -144,7 +144,8 @@ func (s *GitHostSource) Obtain(c *docker.Client, payload []byte) (string, error)
 
 // Returns true if $HOME/.ssh exists, false otherwise
 func HaveSSHKey() bool {
-	for _, filename := range []string{"id_dsa", "id_ecdsa", "id_rsa"} {
+	keys := []string{"id_dsa", "id_ecdsa", "id_rsa", "id_ed25519"}
+	for _, filename := range keys {
 		path := os.ExpandEnv(filepath.Join("$HOME/.ssh", filename))
 		if _, err := os.Stat(path); err == nil {
 			return true
