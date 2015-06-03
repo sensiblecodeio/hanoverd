@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ type Container struct {
 	Name      string
 	ImageName string
 	Args, Env []string
+	Volumes   []string
 	StatusURI string
 
 	client    *docker.Client
@@ -71,6 +73,28 @@ func NewContainer(client *docker.Client, name string, wg *sync.WaitGroup) *Conta
 	return c
 }
 
+func makeVolumeSet(in []string) map[string]struct{} {
+	volumes := map[string]struct{}{}
+	for _, v := range in {
+		if strings.Contains(v, ":") {
+			continue
+		}
+		volumes[v] = struct{}{}
+	}
+	return volumes
+}
+
+func makeBinds(in []string) []string {
+	binds := []string{}
+	for _, v := range in {
+		if !strings.Contains(v, ":") {
+			continue
+		}
+		binds = append(binds, v)
+	}
+	return binds
+}
+
 // `docker create` the container.
 func (c *Container) Create(imageName string) error {
 	opts := docker.CreateContainerOptions{
@@ -82,6 +106,7 @@ func (c *Container) Create(imageName string) error {
 			Env:          c.Env,
 			Cmd:          c.Args,
 			Image:        imageName,
+			Volumes:      makeVolumeSet(c.Volumes),
 		},
 	}
 
@@ -174,6 +199,7 @@ func (c *Container) MappedPort(internal int) (int, bool) {
 func (c *Container) Start() error {
 	hc := &docker.HostConfig{
 		PublishAllPorts: true,
+		Binds:           makeBinds(c.Volumes),
 	}
 	err := c.client.StartContainer(c.container.ID, hc)
 	if err != nil {
