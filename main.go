@@ -228,6 +228,8 @@ func ActionRun(c *cli.Context) {
 	} else if len(c.Args()) == 0 {
 		options.source.Type = BuildCwd
 
+		imageSource = &CwdSource{}
+
 	} else {
 		first := c.Args().First()
 		args := c.Args()[1:]
@@ -242,6 +244,10 @@ func ActionRun(c *cli.Context) {
 			options.source.dockerImageName = first
 		}
 		options.containerArgs = args
+	}
+
+	if imageSource == nil {
+		log.Fatalf("No image source specified")
 	}
 
 	if err := CheckIPTables(); err != nil {
@@ -433,6 +439,12 @@ func loop(
 		wg.Add(1)
 		go func(c *Container) {
 			defer wg.Done()
+
+			if imageSource == nil {
+				log.Printf("No image source specified")
+				c.Failed.Fall()
+				return
+			}
 
 			status, err := c.Run(imageSource, event.Payload)
 			if err != nil {
