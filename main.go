@@ -37,7 +37,8 @@ func DockerErrorStatus(err error) int {
 }
 
 type Options struct {
-	env, publish  []string
+	env, publish, volumes []string
+
 	source        ContainerSource
 	containerArgs []string
 	ports         nat.PortSet
@@ -76,6 +77,11 @@ func main() {
 		cli.StringSliceFlag{
 			Name:  "publish, p",
 			Usage: "ports to publish (same syntax as docker)",
+			Value: &cli.StringSlice{},
+		},
+		cli.StringSliceFlag{
+			Name:  "volume",
+			Usage: "Bind mount a volume",
 			Value: &cli.StringSlice{},
 		},
 		cli.StringFlag{
@@ -202,6 +208,7 @@ func ActionRun(c *cli.Context) {
 	var err error
 
 	options := Options{}
+	options.volumes = c.StringSlice("volume")
 	options.env = makeEnv(c.StringSlice("env"))
 	options.statusURI = c.String("status-uri")
 
@@ -415,6 +422,7 @@ func loop(
 		c := NewContainer(client, name, wg)
 		c.Args = options.containerArgs
 		c.Env = options.env
+		c.Volumes = options.volumes
 		c.StatusURI = options.statusURI
 
 		c.Obtained.Forward(&event.Obtained)
