@@ -218,7 +218,7 @@ func ActionRun(c *cli.Context) {
 	containerName := "hanoverd"
 	var imageSource ImageSource
 
-	if c.GlobalIsSet("hookbot") {
+	if c.GlobalString("hookbot") != "" {
 
 		hookbotURL := c.GlobalString("hookbot")
 		containerName, imageSource, err = GetSourceFromHookbot(hookbotURL)
