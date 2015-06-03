@@ -90,8 +90,9 @@ func main() {
 			Value: "/",
 		},
 		cli.StringFlag{
-			Name:  "hookbot",
-			Usage: "url of hookbot websocket endpoint to monitor for updates",
+			Name:   "hookbot",
+			Usage:  "url of hookbot websocket endpoint to monitor for updates",
+			EnvVar: "HOOKBOT_URL",
 		},
 	}
 
@@ -103,12 +104,14 @@ func main() {
 			Action: ActionBuilder,
 			Flags: []cli.Flag{
 				cli.StringFlag{
-					Name:  "listen",
-					Usage: "url of hookbot websocket endpoint to monitor for updates",
+					Name:   "listen",
+					Usage:  "url of hookbot websocket endpoint to monitor for updates",
+					EnvVar: "HOOKBOT_MONITOR_URL",
 				},
 				cli.StringFlag{
-					Name:  "docker-notify",
-					Usage: "url of hookbot pub endpoint to notify on complete build",
+					Name:   "docker-notify",
+					Usage:  "url of hookbot pub endpoint to notify on complete build",
+					EnvVar: "HOOKBOT_DOCKER_NOTIFY_URL",
 				},
 			},
 		},
@@ -307,7 +310,7 @@ func ActionRun(c *cli.Context) {
 		value = <-sig
 	}()
 
-	if c.GlobalIsSet("hookbot") {
+	if c.GlobalString("hookbot") != "" {
 		go MonitorHookbot(c.GlobalString("hookbot"), events)
 	}
 
