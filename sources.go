@@ -23,12 +23,23 @@ type ImageSource interface {
 	Obtain(client *docker.Client, payload []byte) (string, error)
 }
 
-type CwdSource struct {
+type CwdSource struct{}
+
+func (CwdSource) Name() (string, error) {
+	name, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Base(name), nil
 }
 
 func (s *CwdSource) Obtain(c *docker.Client, payload []byte) (string, error) {
-	// `docker build pwd`
-	return "", fmt.Errorf("not implemented: CwdSource.Obtain")
+	imageName, err := s.Name()
+	if err != nil {
+		return "", err
+	}
+	err = DockerBuildDirectory(c, imageName, ".")
+	return imageName, nil
 }
 
 type DockerPullSource struct {
