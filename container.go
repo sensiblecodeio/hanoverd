@@ -111,7 +111,30 @@ func (c *Container) Create(imageName string) error {
 	}
 
 	var err error
+
 	c.container, err = c.client.CreateContainer(opts)
+
+	switch err := err.(type) {
+	case *docker.Error:
+		if err.Status == http.StatusConflict {
+
+			log.Printf("Container already exists, removing old one: %q", c.Name)
+			// Remove the old one and try again
+			err := c.client.RemoveContainer(docker.RemoveContainerOptions{
+				Force: true, ID: c.Name,
+			})
+
+			if err != nil {
+				return fmt.Errorf("duplicate container, failed to remove other: %v", err)
+			}
+
+			// Try again
+			c.container, err = c.client.CreateContainer(opts)
+
+			return err
+		}
+	default:
+	}
 
 	return err
 }
