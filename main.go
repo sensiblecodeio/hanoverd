@@ -195,7 +195,7 @@ func ActionBuilder(c *cli.Context) {
 		log.Printf("Build failed: %v", err)
 	}
 
-	for range events {
+	for _ = range events {
 		log.Printf("Event!")
 
 		err := build()
