@@ -1,4 +1,4 @@
-buildtime: .PHONY
+buildtime: .FORCE
 	docker build -t hanoverd-buildtime .
 	docker run --rm hanoverd-buildtime cat /go/bin/hanoverd > ./hanoverd
 	chmod u+x ./hanoverd
@@ -8,4 +8,4 @@ release: buildtime .FORCE
 	gphr release -keep=true hanoverd_linux_amd64
 
 .FORCE:
-.PHONY: .FORCE release
+.PHONY: .FORCE buildtime release

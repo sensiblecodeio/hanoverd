@@ -1,0 +1,27 @@
+[submodule "vendor/github.com/codegangsta/cli"]
+	path = vendor/github.com/codegangsta/cli
+	url = https://github.com/codegangsta/cli
+[submodule "vendor/github.com/docker/docker"]
+	path = vendor/github.com/docker/docker
+	url = https://github.com/docker/docker
+[submodule "vendor/github.com/fsouza/go-dockerclient"]
+	path = vendor/github.com/fsouza/go-dockerclient
+	url = https://github.com/fsouza/go-dockerclient
+[submodule "vendor/github.com/pwaller/barrier"]
+	path = vendor/github.com/pwaller/barrier
+	url = https://github.com/pwaller/barrier
+[submodule "vendor/github.com/scraperwiki/hookbot"]
+	path = vendor/github.com/scraperwiki/hookbot
+	url = https://github.com/scraperwiki/hookbot
+[submodule "vendor/github.com/gorilla/websocket"]
+	path = vendor/github.com/gorilla/websocket
+	url = https://github.com/gorilla/websocket
+[submodule "vendor/go.googlesource.com/sys"]
+	path = vendor/golang.org/x/sys
+	url = https://go.googlesource.com/sys
+[submodule "vendor/go.googlesource.com/net"]
+	path = vendor/golang.org/x/net
+	url = https://go.googlesource.com/net
+[submodule "vendor/github.com/vaughan0/go-ini"]
+	path = vendor/github.com/vaughan0/go-ini
+	url = https://github.com/vaughan0/go-ini
