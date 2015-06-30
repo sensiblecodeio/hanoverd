@@ -223,7 +223,7 @@ func ActionRun(c *cli.Context) {
 		hookbotURL := c.GlobalString("hookbot")
 		containerName, imageSource, err = GetSourceFromHookbot(hookbotURL)
 		if err != nil {
-			log.Fatal("Failed to parse hookbot source: %v", err)
+			log.Fatalf("Failed to parse hookbot source: %v", err)
 		}
 
 		options.containerArgs = c.Args()
