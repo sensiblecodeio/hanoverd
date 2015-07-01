@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/codegangsta/cli"
-	"github.com/docker/docker/nat"
+	"github.com/docker/docker/pkg/nat"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
 	"github.com/scraperwiki/hookbot/pkg/listen"
