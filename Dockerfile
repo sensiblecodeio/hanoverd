@@ -16,7 +16,7 @@ COPY ./vendor /go/src/
 RUN go install \
 	-v -installsuffix=static \
 	github.com/codegangsta/cli \
-	github.com/docker/docker/nat \
+	github.com/docker/docker/pkg/nat \
 	github.com/docker/docker/pkg/jsonmessage \
 	github.com/fsouza/go-dockerclient \
 	github.com/pwaller/barrier \
