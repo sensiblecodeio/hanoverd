@@ -108,7 +108,6 @@ when it is signalled.
 * Rapidly poll container with requests until it gives a 200 response
 * Redirect traffic to the new container using iptables rules
 * Stop the old container
-* Delete the old image
 
 If a signal comes in to start a new container and the previous
 one has not had new traffic directed to it yet, image obtaining is
