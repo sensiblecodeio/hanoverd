@@ -14,6 +14,7 @@ func init() {
 
 	err := CheckIPTables()
 	if err != nil {
+		log.Printf("Unable to find iptables, using fallback")
 		wd, err := os.Getwd()
 		if err != nil {
 			return
@@ -38,7 +39,9 @@ const (
 )
 
 func CheckIPTables() error {
-	return exec.Command(IPTablesPath, "-L").Run()
+	cmd := exec.Command(IPTablesPath, "--list", "--wait")
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // Invoke one iptables command.
@@ -59,7 +62,7 @@ func iptables(action Action, chain string, source, target int, ipAddress string)
 			"--match", "addrtype", "--dst-type", "LOCAL",
 			"--dport", fmt.Sprint(source),
 			"--jump", "REDIRECT",
-			"--to-ports", fmt.Sprint(target))
+			"--to-ports", fmt.Sprint(target), "--wait")
 	case DELETE:
 		cmd = exec.Command(
 			IPTablesPath, "--delete", chain,
@@ -69,7 +72,7 @@ func iptables(action Action, chain string, source, target int, ipAddress string)
 			"--match", "addrtype", "--dst-type", "LOCAL",
 			"--dport", fmt.Sprint(source),
 			"--jump", "REDIRECT",
-			"--to-ports", fmt.Sprint(target))
+			"--to-ports", fmt.Sprint(target), "--wait")
 	}
 	cmd.Stderr = os.Stderr
 	return cmd
