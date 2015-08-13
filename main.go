@@ -39,11 +39,12 @@ func DockerErrorStatus(err error) int {
 type Options struct {
 	env, publish, volumes []string
 
-	source        ContainerSource
-	containerArgs []string
-	ports         nat.PortSet
-	portBindings  nat.PortMap
-	statusURI     string
+	source         ContainerSource
+	containerArgs  []string
+	ports          nat.PortSet
+	portBindings   nat.PortMap
+	statusURI      string
+	disableOverlap bool
 }
 
 type UpdateEvent struct {
@@ -69,6 +70,10 @@ func main() {
 	app.Usage = "handover docker containers"
 
 	app.Flags = []cli.Flag{
+		cli.BoolFlag{
+			Name:  "disable-overlap",
+			Usage: "shut down old container before starting new one",
+		},
 		cli.StringSliceFlag{
 			Name:  "env, e",
 			Usage: "environment variables to pass (reads from env if = omitted)",
@@ -214,6 +219,7 @@ func ActionRun(c *cli.Context) {
 	options.volumes = c.StringSlice("volume")
 	options.env = makeEnv(c.StringSlice("env"))
 	options.statusURI = c.String("status-uri")
+	options.disableOverlap = c.Bool("disable-overlap")
 
 	containerName := "hanoverd"
 	var imageSource ImageSource
@@ -427,6 +433,10 @@ func loop(
 		i++
 
 		log.Printf("New container starting: %q", name)
+		if options.disableOverlap {
+			log.Printf("Overlap switched off, killing old")
+			flips <- nil
+		}
 
 		c := NewContainer(client, name, wg)
 		c.Args = options.containerArgs
@@ -494,6 +504,15 @@ func flipper(
 	var live *Container
 
 	for container := range newContainers {
+		if container == nil {
+			// A nil container is an instruction to just kill the
+			// running container. (e.g, for --disable-overlap)
+			if live != nil {
+				live.Closing.Fall()
+			}
+			live = nil
+			continue
+		}
 
 		err := flip(wg, options, container)
 		if err != nil {
