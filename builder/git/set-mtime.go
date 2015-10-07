@@ -98,8 +98,6 @@ func SetMTimes(git_dir, checkout_dir, ref string) error {
 		if err != nil {
 			return fmt.Errorf("chtimes: %v", err)
 		}
-
-		fmt.Printf("%s: %s\n", file, mTime)
 	}
 
 	for dir, mTime := range dirMTimes {
@@ -107,7 +105,6 @@ func SetMTimes(git_dir, checkout_dir, ref string) error {
 		if err != nil {
 			return fmt.Errorf("chtimes: %v", err)
 		}
-		fmt.Printf("%s: %s\n", dir, mTime)
 	}
 	return nil
 }
