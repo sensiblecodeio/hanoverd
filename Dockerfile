@@ -1,4 +1,4 @@
-FROM golang:1.4
+FROM golang:1.5
 
 RUN apt-get update && apt-get install -y upx iptables
 
@@ -7,23 +7,15 @@ COPY ./github-host-key /etc/ssh/ssh_known_hosts
 RUN go get github.com/pwaller/goupx
 
 # Turn off cgo so that we end up with totally static binaries
-ENV CGO_ENABLED 0
+ENV CGO_ENABLED=0 \
+    GO15VENDOREXPERIMENT=1
 
 RUN go install -a -installsuffix=static std
 
-COPY ./vendor /go/src/
+COPY ./vendor /go/src/github.com/scraperwiki/hanoverd/vendor/
+COPY ./dependencies /go/src/github.com/scraperwiki/hanoverd/dependencies
 
-RUN go install \
-	-v -installsuffix=static \
-	github.com/codegangsta/cli \
-	github.com/docker/docker/pkg/nat \
-	github.com/docker/docker/pkg/jsonmessage \
-	github.com/fsouza/go-dockerclient \
-	github.com/pwaller/barrier \
-	github.com/scraperwiki/hookbot/pkg/listen \
-	github.com/vaughan0/go-ini \
-	golang.org/x/net/context \
-	golang.org/x/sys/unix
+RUN xargs go install -installsuffix=static -v < /go/src/github.com/scraperwiki/hanoverd/dependencies
 
 COPY . /go/src/github.com/scraperwiki/hanoverd/
 
