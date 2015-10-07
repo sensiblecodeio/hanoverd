@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -92,9 +91,12 @@ func DaemonRoutes() {
 
 		path := "./src/" + target
 
-		gitLocalMirror(remote, path, os.Stderr)
+		err := git.LocalMirror(remote, path, ref, os.Stderr)
+		if err != nil {
+			log.Printf("LocalMirror failed: %v", err)
+		}
 
-		rev, err := gitRevParse(path, ref)
+		rev, err := git.RevParse(path, ref)
 		if err != nil {
 			log.Printf("Unable to parse rev: %v", err)
 			return
@@ -110,7 +112,7 @@ func DaemonRoutes() {
 			return
 		}
 
-		tagName, err := gitDescribe(path, rev)
+		tagName, err := git.Describe(path, rev)
 		if err != nil {
 			log.Printf("Unable to describe %v: %v", rev, err)
 			return

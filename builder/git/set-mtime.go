@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func GitSetMTimes(git_dir, checkout_dir, ref string) error {
+func SetMTimes(git_dir, checkout_dir, ref string) error {
 	// From https://github.com/rosylilly/git-set-mtime with tweaks
 	// Copyright (c) 2014 Sho Kusano
 
@@ -52,7 +52,6 @@ func GitSetMTimes(git_dir, checkout_dir, ref string) error {
 		utimes[1] = syscall.NsecToTimeval(mtime.UnixNano())
 
 		if e := syscall.Futimesat(AT_FDCWD, path, utimes[0:]); e != nil {
-			wd, err := os.Getwd()
 			return &os.PathError{"futimesat", path, e}
 		}
 		return nil
