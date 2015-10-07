@@ -147,9 +147,13 @@ func ActionBuilder(c *cli.Context) {
 		log.Fatalf("Unable to connect to docker: %v", err)
 	}
 
+	hookbotURL := c.String("listen")
+	// Remove the #anchor part of the URL, if specified.
+	hookbotURL = strings.SplitN(hookbotURL, "#", 2)[0]
+
 	finish := make(chan struct{})
 	header := http.Header{}
-	events, errs := listen.RetryingWatch(c.String("listen"), header, finish)
+	events, errs := listen.RetryingWatch(hookbotURL, header, finish)
 
 	go func() {
 		defer close(finish)

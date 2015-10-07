@@ -81,11 +81,16 @@ func (s *DockerPullSource) Obtain(c *docker.Client, payload []byte) (string, err
 }
 
 type GitHostSource struct {
-	Host, User, Repository, InitialBranch string
+	Host          string
+	User          string
+	Repository    string
+	InitialBranch string
+	// Directory in which to do `docker build`.
+	// Uses repository root if blank.
+	ImageRoot string
 }
 
 func (s *GitHostSource) CloneURL() string {
-
 	format := "https://%s/%s/%s"
 	if HaveSSHKey() {
 		format = "ssh://git@%s/%s/%s"
@@ -133,8 +138,9 @@ func (s *GitHostSource) Obtain(c *docker.Client, payload []byte) (string, error)
 	defer build.Cleanup()
 
 	dockerImage := fmt.Sprintf("%s:%s", s.Repository, build.Name)
+	buildPath := filepath.Join(build.Dir, s.ImageRoot)
 
-	err = DockerBuildDirectory(c, dockerImage, build.Dir)
+	err = DockerBuildDirectory(c, dockerImage, buildPath)
 	if err != nil {
 		return "", err
 	}
