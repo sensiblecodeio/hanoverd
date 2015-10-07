@@ -5,8 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func SetMTimes(git_dir, checkout_dir, ref string) error {
@@ -45,13 +46,11 @@ func SetMTimes(git_dir, checkout_dir, ref string) error {
 
 	chtime := func(path string, atime, mtime time.Time) error {
 		// https://github.com/torvalds/linux/blob/2decb2682f80759f631c8332f9a2a34a02150a03/include/uapi/linux/fcntl.h#L56
-		const AT_FDCWD = -100
+		var utimes [2]unix.Timespec
+		utimes[0] = unix.NsecToTimespec(atime.UnixNano())
+		utimes[1] = unix.NsecToTimespec(mtime.UnixNano())
 
-		var utimes [2]syscall.Timeval
-		utimes[0] = syscall.NsecToTimeval(atime.UnixNano())
-		utimes[1] = syscall.NsecToTimeval(mtime.UnixNano())
-
-		if e := syscall.Futimesat(AT_FDCWD, path, utimes[0:]); e != nil {
+		if e := unix.UtimesNanoAt(unix.AT_FDCWD, path, utimes[0:], unix.AT_SYMLINK_NOFOLLOW); e != nil {
 			return &os.PathError{"futimesat", path, e}
 		}
 		return nil
