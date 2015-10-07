@@ -10,7 +10,7 @@ import (
 
 var (
 	hookbotGithostRe = regexp.MustCompile("^/sub/([^/]+)/repo/([^/]+)/([^/]+)" +
-		"/branch/([^/]+)$")
+		"/branch/([^/#]+)(?:#(.*))?$")
 	hookbotDockerPullSub = regexp.MustCompile("^/sub/docker-pull/(.*)/tag/([^/]+)$")
 	hookbotDockerPullPub = regexp.MustCompile("^/pub/docker-pull/(.*)/tag/([^/]+)$")
 )
@@ -24,7 +24,7 @@ func GetSourceFromHookbot(hookbotURLStr string) (string, ImageSource, error) {
 	}
 
 	switch {
-	case hookbotGithostRe.MatchString(hookbotURL.Path):
+	case hookbotGithostRe.MatchString(PathWithFragment(hookbotURL)):
 		return NewGitHostSource(hookbotURL)
 
 	case hookbotDockerPullSub.MatchString(hookbotURL.Path):
@@ -34,20 +34,31 @@ func GetSourceFromHookbot(hookbotURLStr string) (string, ImageSource, error) {
 	return "", nil, fmt.Errorf("Unrecogized hookbot URL %q", hookbotURL.Path)
 }
 
+// Represent the path as /foo or /foo#bar if #bar is specified.
+func PathWithFragment(u *url.URL) string {
+	pathWithFragment := u.Path
+	if u.Fragment != "" {
+		pathWithFragment += "#" + u.Fragment
+	}
+	return pathWithFragment
+}
+
 func NewGitHostSource(hookbotURL *url.URL) (string, ImageSource, error) {
 
-	groups := hookbotGithostRe.FindStringSubmatch(hookbotURL.Path)
+	groups := hookbotGithostRe.FindStringSubmatch(PathWithFragment(hookbotURL))
 	host, user, repository, branch := groups[1], groups[2], groups[3], groups[4]
+	imageRoot := groups[5]
 
 	imageSource := &GitHostSource{
 		Host:          host,
 		User:          user,
 		Repository:    repository,
 		InitialBranch: branch,
+		ImageRoot:     imageRoot,
 	}
 
-	log.Printf("Hookbot monitoring %v@%v via %v",
-		repository, branch, hookbotURL.Host)
+	log.Printf("Hookbot monitoring %v@%v via %v (imageroot %q)",
+		repository, branch, hookbotURL.Host, imageRoot)
 
 	return repository, imageSource, nil
 }
