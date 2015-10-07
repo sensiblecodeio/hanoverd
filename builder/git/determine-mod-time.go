@@ -9,7 +9,7 @@ import (
 
 // Return the most recent committed timestamp of each file in the whole of
 // history. It's faster than invoking 'git log -1' on each file.
-func GitCommitTimes(gitDir, revision string) (map[string]time.Time, error) {
+func CommitTimes(gitDir, revision string) (map[string]time.Time, error) {
 	times := map[string]time.Time{}
 
 	cmd := Command(gitDir, "git", "log", "--format=-\n%cd", "--date=rfc2822",

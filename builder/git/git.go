@@ -81,7 +81,7 @@ type GithubStatus struct {
 var ErrSkipGithubEndpoint = errors.New("Github endpoint skipped")
 
 // Creates or updates a mirror of `url` at `gitDir` using `git clone --mirror`
-func gitLocalMirror(
+func LocalMirror(
 	url, gitDir, ref string,
 	messages io.Writer,
 ) (err error) {
@@ -94,13 +94,13 @@ func gitLocalMirror(
 	if _, err := os.Stat(gitDir); err == nil {
 		// Repo already exists, don't need to clone it.
 
-		if gitAlreadyHaveRef(gitDir, ref) {
+		if AlreadyHaveRef(gitDir, ref) {
 			// Sha already exists, don't need to fetch.
 			// log.Printf("Already have ref: %v %v", gitDir, ref)
 			return nil
 		}
 
-		return gitFetch(ctx, gitDir, url, messages)
+		return Fetch(ctx, gitDir, url, messages)
 	}
 
 	err = os.MkdirAll(filepath.Dir(gitDir), 0777)
@@ -108,10 +108,10 @@ func gitLocalMirror(
 		return err
 	}
 
-	return gitClone(ctx, url, gitDir, messages)
+	return Clone(ctx, url, gitDir, messages)
 }
 
-func gitClone(
+func Clone(
 	ctx context.Context,
 	url, gitDir string,
 	messages io.Writer,
@@ -144,7 +144,7 @@ func ContextRun(ctx context.Context, cmd *exec.Cmd) error {
 	return nil
 }
 
-func gitFetch(
+func Fetch(
 	ctx context.Context,
 	gitDir, url string,
 	messages io.Writer,
@@ -170,7 +170,7 @@ var ShaLike = regexp.MustCompile("[0-9a-zA-Z]{40}")
 // Returns true if ref is sha-like and is in the object database.
 // The "sha-like" condition ensures that refs like `master` are always
 // freshened.
-func gitAlreadyHaveRef(gitDir, sha string) bool {
+func AlreadyHaveRef(gitDir, sha string) bool {
 	if !ShaLike.MatchString(sha) {
 		return false
 	}
@@ -182,7 +182,7 @@ func gitAlreadyHaveRef(gitDir, sha string) bool {
 	return err == nil
 }
 
-func gitHaveFile(gitDir, ref, path string) (ok bool, err error) {
+func HaveFile(gitDir, ref, path string) (ok bool, err error) {
 	cmd := Command(gitDir, "git", "show", fmt.Sprintf("%s:%s", ref, path))
 	cmd.Stdout = nil // don't want to see the contents
 	err = cmd.Run()
@@ -197,7 +197,7 @@ func gitHaveFile(gitDir, ref, path string) (ok bool, err error) {
 	return ok, err
 }
 
-func gitRevParse(gitDir, ref string) (sha string, err error) {
+func RevParse(gitDir, ref string) (sha string, err error) {
 	cmd := Command(gitDir, "git", "rev-parse", ref)
 	cmd.Stdout = nil // for cmd.Output
 
@@ -211,7 +211,7 @@ func gitRevParse(gitDir, ref string) (sha string, err error) {
 	return
 }
 
-func gitDescribe(gitDir, ref string) (desc string, err error) {
+func Describe(gitDir, ref string) (desc string, err error) {
 	cmd := Command(gitDir, "git", "describe", "--all", "--tags", "--long", ref)
 	cmd.Stdout = nil // for cmd.Output
 
@@ -226,7 +226,7 @@ func gitDescribe(gitDir, ref string) (desc string, err error) {
 	return
 }
 
-func gitCheckout(gitDir, checkoutDir, ref string) error {
+func Checkout(gitDir, checkoutDir, ref string) error {
 
 	err := os.MkdirAll(checkoutDir, 0777)
 	if err != nil {
@@ -242,73 +242,11 @@ func gitCheckout(gitDir, checkoutDir, ref string) error {
 	// Set mtimes to time file is most recently affected by a commit.
 	// This is annoying but unfortunately git sets the timestamps to now,
 	// and docker depends on the mtime for cache invalidation.
-	err = GitSetMTimes(gitDir, checkoutDir, ref)
+	err = SetMTimes(gitDir, checkoutDir, ref)
 	if err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func GitSetMTimes(gitDir, checkoutDir, ref string) error {
-
-	commitTimes, err := GitCommitTimes(gitDir, ref)
-	if err != nil {
-		return err
-	}
-
-	lsFiles := Command(gitDir, "git", "ls-tree", "-r", "--name-only", "-z", ref)
-	lsFiles.Stdout = nil
-	out, err := lsFiles.Output()
-	if err != nil {
-		return fmt.Errorf("git ls-files: %v", err)
-	}
-
-	dirMTimes := map[string]time.Time{}
-
-	files := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
-	for _, file := range files {
-		mTime, ok := commitTimes[file]
-		if !ok {
-			return fmt.Errorf("failed to find file in history: %q", file)
-		}
-
-		// Loop over each directory in the path to `file`, updating `dirMTimes`
-		// to take the most recent time seen.
-		dir := filepath.Dir(file)
-		for {
-			if other, ok := dirMTimes[dir]; ok {
-				if mTime.After(other) {
-					// file mTime is more recent than previous seen for 'dir'
-					dirMTimes[dir] = mTime
-				}
-			} else {
-				// first occurrence of dir
-				dirMTimes[dir] = mTime
-			}
-
-			// Remove one directory from the path until it isn't changed anymore
-			if dir == filepath.Dir(dir) {
-				break
-			}
-			dir = filepath.Dir(dir)
-		}
-
-		err = os.Chtimes(filepath.Join(checkoutDir, file), mTime, mTime)
-		if err != nil {
-			return fmt.Errorf("chtimes: %v", err)
-		}
-
-		// fmt.Printf("%s: %s\n", file, mTime)
-	}
-
-	for dir, mTime := range dirMTimes {
-		err = os.Chtimes(filepath.Join(checkoutDir, dir), mTime, mTime)
-		if err != nil {
-			return fmt.Errorf("chtimes: %v", err)
-		}
-		// fmt.Printf("%s: %s\n", dir, mTime)
-	}
 	return nil
 }
 
@@ -335,17 +273,17 @@ func PrepBuildDirectory(
 		return nil, fmt.Errorf("unable to determine abspath: %v", err)
 	}
 
-	err = gitLocalMirror(remote, gitDir, ref, os.Stderr)
+	err = LocalMirror(remote, gitDir, ref, os.Stderr)
 	if err != nil {
-		return nil, fmt.Errorf("unable to gitLocalMirror: %v", err)
+		return nil, fmt.Errorf("unable to LocalMirror: %v", err)
 	}
 
-	rev, err := gitRevParse(gitDir, ref)
+	rev, err := RevParse(gitDir, ref)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse rev: %v", err)
 	}
 
-	tagName, err := gitDescribe(gitDir, rev)
+	tagName, err := Describe(gitDir, rev)
 	if err != nil {
 		return nil, fmt.Errorf("unable to describe %v: %v", rev, err)
 	}
@@ -369,7 +307,7 @@ func PrepBuildDirectory(
 }
 
 func recursiveCheckout(gitDir, checkoutPath, rev string) error {
-	err := gitCheckout(gitDir, checkoutPath, rev)
+	err := Checkout(gitDir, checkoutPath, rev)
 	if err != nil {
 		return fmt.Errorf("failed to checkout: %v", err)
 	}

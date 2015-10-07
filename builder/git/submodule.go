@@ -103,7 +103,7 @@ func prepSubmodule(
 
 	subGitDir := filepath.Join(mainGitDir, "modules", submodule.Path)
 
-	err := gitLocalMirror(submodule.URL, subGitDir, submodule.Rev, os.Stderr)
+	err := LocalMirror(submodule.URL, subGitDir, submodule.Rev, os.Stderr)
 	if err != nil {
 		return err
 	}
