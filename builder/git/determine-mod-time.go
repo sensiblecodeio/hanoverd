@@ -42,7 +42,6 @@ func CommitTimes(gitDir, revision string) (map[string]time.Time, error) {
 		}
 		line := scanner.Text()
 
-		// log.Printf("state %v line %q", parseState, line)
 		if line == "-" {
 			// Single blank line means StateTimestamp follows
 			parseState = StateTimestamp
