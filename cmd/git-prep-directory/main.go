@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/scraperwiki/hanoverd/builder/git"
@@ -47,4 +48,5 @@ func ActionMain(c *cli.Context) {
 		log.Fatalln("Error:", err)
 	}
 	log.Printf("Checked out %v at %v", where.Name, where.Dir)
+	fmt.Printf("%v", where.Dir)
 }
