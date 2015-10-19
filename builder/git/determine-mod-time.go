@@ -51,12 +51,21 @@ func CommitTimes(gitDir, revision string) (map[string]time.Time, error) {
 
 		switch parseState {
 		case StateFilenames:
-			parts := strings.SplitN(line, "\t", 2)
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("Expected ^[A-Z]\\t(.*)$, got %q", line)
-			}
 
-			filename := parts[1]
+			var filename string
+			parts := strings.Split(line, "\t")
+			op := parts[0]
+
+			switch {
+			case len(op) == 0:
+				return nil, fmt.Errorf("Unexpected blank git operation: %q", parts)
+			case len(parts) == 3 && (op[0] == 'R' || op[0] == 'C'):
+				filename = parts[2]
+			case len(parts) != 2:
+				return nil, fmt.Errorf("Expected ^[A-Z]\\t(.*)$, got %q", line)
+			default:
+				filename = parts[1]
+			}
 
 			if _, seen := times[filename]; seen {
 				// Take only the first timestamp encountered, it's the most
