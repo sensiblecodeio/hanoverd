@@ -2,7 +2,6 @@ package git
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -52,14 +51,14 @@ func SetMTimes(gitDir, checkoutDir, ref string) error {
 			dir = filepath.Dir(dir)
 		}
 
-		err = os.Chtimes(filepath.Join(checkoutDir, file), mTime, mTime)
+		err = Chtimes(filepath.Join(checkoutDir, file), mTime, mTime)
 		if err != nil {
 			return fmt.Errorf("chtimes: %v", err)
 		}
 	}
 
 	for dir, mTime := range dirMTimes {
-		err = os.Chtimes(filepath.Join(checkoutDir, dir), mTime, mTime)
+		err = Chtimes(filepath.Join(checkoutDir, dir), mTime, mTime)
 		if err != nil {
 			return fmt.Errorf("chtimes: %v", err)
 		}
