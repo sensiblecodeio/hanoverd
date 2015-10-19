@@ -21,13 +21,13 @@ import (
 
 const GIT_BASE_DIR = "repo"
 
-// Invoke a `command` in `workdir` with `args`, connecting up its Stdout and Stderr
+// Invoke a `command` in `workdir` with `args`, connecting Stdout and Stderr to Stderr.
 func Command(workdir, command string, args ...string) *exec.Cmd {
 	// log.Printf("wd = %s cmd = %s, args = %q", workdir, command, append([]string{}, args...))
 
 	cmd := exec.Command(command, args...)
 	cmd.Dir = workdir
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	return cmd
 }
