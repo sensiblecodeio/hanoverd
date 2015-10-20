@@ -68,6 +68,7 @@ func main() {
 
 	app.Name = "hanoverd"
 	app.Usage = "handover docker containers"
+	app.Version = "0.7.9"
 
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{
