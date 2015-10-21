@@ -69,6 +69,9 @@ func main() {
 	app.Name = "hanoverd"
 	app.Usage = "handover docker containers"
 
+	// Use `hanoverd version` rather than `hanoverd -v`
+	app.HideVersion = true
+
 	// Made by `go generate` populating version.go via `git describe`.
 	app.Version = Version
 
@@ -88,7 +91,7 @@ func main() {
 			Value: &cli.StringSlice{},
 		},
 		cli.StringSliceFlag{
-			Name:  "volume",
+			Name:  "volume, v",
 			Usage: "Bind mount a volume",
 			Value: &cli.StringSlice{},
 		},
@@ -122,6 +125,10 @@ func main() {
 					EnvVar: "HOOKBOT_DOCKER_NOTIFY_URL",
 				},
 			},
+		},
+		{
+			Name:   "version",
+			Action: cli.ShowVersion,
 		},
 	}
 
