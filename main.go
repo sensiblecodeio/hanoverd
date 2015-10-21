@@ -69,6 +69,9 @@ func main() {
 	app.Name = "hanoverd"
 	app.Usage = "handover docker containers"
 
+	// Made by `go generate` populating version.go via `git describe`.
+	app.Version = Version
+
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{
 			Name:  "disable-overlap",
