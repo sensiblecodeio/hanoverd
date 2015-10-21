@@ -63,16 +63,14 @@ func IsStdinReadable() bool {
 	return err != io.EOF
 }
 
-// appVersion set at build from latest annotated git tag.
-var appVersion string
-
 func main() {
 	app := cli.NewApp()
 
 	app.Name = "hanoverd"
 	app.Usage = "handover docker containers"
 
-	app.Version = appVersion
+	// Made by `go generate` populating version.go via `git describe`.
+	app.Version = Version
 
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{

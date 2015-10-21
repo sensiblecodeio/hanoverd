@@ -20,6 +20,5 @@ RUN xargs go install -installsuffix=static -v < /go/src/github.com/scraperwiki/h
 COPY . /go/src/github.com/scraperwiki/hanoverd/
 
 RUN go install -x -v -installsuffix=static \
-                -ldflags "-X main.appVersion=`git --git-dir /go/src/github.com/scraperwiki/hanoverd/.git describe --abbrev=0 --tags`" \
 		github.com/scraperwiki/hanoverd && \
 	goupx /go/bin/hanoverd
