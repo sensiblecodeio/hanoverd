@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vaughan0/go-ini"
+	ini "github.com/vaughan0/go-ini"
 )
 
 func PrepSubmodules(
