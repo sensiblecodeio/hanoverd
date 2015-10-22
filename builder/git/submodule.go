@@ -154,6 +154,7 @@ func GetSubmoduleRevs(gitDir, mainRev string, submodules []Submodule) error {
 
 func GetSubmoduleRev(gitDir, submodulePath, mainRev string) (string, error) {
 	cmd := Command(gitDir, "git", "ls-tree", mainRev, "--", submodulePath)
+	cmd.Stdout = nil
 
 	parts, err := cmd.Output()
 	if err != nil {
