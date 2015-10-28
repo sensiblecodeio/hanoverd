@@ -29,7 +29,9 @@ func PrepSubmodules(
 
 	log.Printf("Prep %v submodules", len(submodules))
 
-	GetSubmoduleRevs(gitDir, mainRev, submodules)
+	if err := GetSubmoduleRevs(gitDir, mainRev, submodules); err != nil {
+		return fmt.Errorf("GetSubmoduleRevs: %v", err)
+	}
 
 	errs := make(chan error, len(submodules))
 
@@ -154,6 +156,7 @@ func GetSubmoduleRevs(gitDir, mainRev string, submodules []Submodule) error {
 
 func GetSubmoduleRev(gitDir, submodulePath, mainRev string) (string, error) {
 	cmd := Command(gitDir, "git", "ls-tree", mainRev, "--", submodulePath)
+	cmd.Stdout = nil
 
 	parts, err := cmd.Output()
 	if err != nil {
