@@ -14,8 +14,7 @@ import (
 
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/fsouza/go-dockerclient"
-
-	"github.com/scraperwiki/hanoverd/builder/git"
+	"github.com/scraperwiki/git-prep-directory"
 )
 
 type ImageSource interface {

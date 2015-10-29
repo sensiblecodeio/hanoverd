@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/fsouza/go-dockerclient"
-	"github.com/scraperwiki/hanoverd/builder/git"
+	"github.com/scraperwiki/git-prep-directory"
 )
 
 // Invoke a `command` in `workdir` with `args`, connecting up its Stdout and Stderr
