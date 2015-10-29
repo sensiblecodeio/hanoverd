@@ -25,3 +25,6 @@
 [submodule "vendor/github.com/vaughan0/go-ini"]
 	path = vendor/github.com/vaughan0/go-ini
 	url = https://github.com/vaughan0/go-ini
+[submodule "vendor/github.com/scraperwiki/git-prep-directory"]
+	path = vendor/github.com/scraperwiki/git-prep-directory
+	url = https://github.com/scraperwiki/git-prep-directory
