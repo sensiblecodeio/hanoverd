@@ -24,6 +24,7 @@ import (
 	"github.com/scraperwiki/hookbot/pkg/listen"
 
 	"github.com/scraperwiki/hanoverd/pkg/builder"
+	"github.com/scraperwiki/hanoverd/pkg/iptables"
 	"github.com/scraperwiki/hanoverd/pkg/source"
 	"github.com/scraperwiki/hanoverd/pkg/util"
 )
@@ -186,7 +187,7 @@ func ActionRun(c *cli.Context) {
 		log.Fatalf("No image source specified")
 	}
 
-	if err := CheckIPTables(); err != nil {
+	if err := iptables.CheckIPTables(); err != nil {
 		log.Fatal("Unable to run `iptables -L`, see README (", err, ")")
 	}
 
@@ -459,7 +460,7 @@ func flip(wg *sync.WaitGroup, options Options, container *Container) error {
 				}
 
 				ipAddress := container.container.NetworkSettings.IPAddress
-				remove, err := ConfigureRedirect(public, mappedPort, ipAddress)
+				remove, err := iptables.ConfigureRedirect(public, mappedPort, ipAddress)
 				if err != nil {
 					// Firewall rule didn't get applied.
 					err := fmt.Errorf(
