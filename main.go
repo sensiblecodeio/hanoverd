@@ -174,8 +174,6 @@ func ActionRun(c *cli.Context) {
 		if first == "@" {
 			// If the first arg is "@", then use the Cwd
 			options.source.Type = BuildCwd
-		} else if first == "daemon" {
-			RunDaemon()
 		} else {
 			options.source.Type = DockerPull
 			options.source.dockerImageName = first
