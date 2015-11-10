@@ -141,6 +141,11 @@ func (c *Container) CopyOutput() error {
 // Returns `true` for success and `false` for failure.
 func (c *Container) AwaitListening() bool {
 
+	if len(c.container.NetworkSettings.PortMappingAPI()) == 0 {
+		log.Printf("Error! No ports are exposed.")
+		return false
+	}
+
 	const (
 		DefaultTimeout = 5 * time.Minute
 		PollFrequency  = 10 // times per second (via integer division of ns)
