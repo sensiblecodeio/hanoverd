@@ -44,7 +44,6 @@ func DockerErrorStatus(err error) int {
 type Options struct {
 	env, publish, volumes []string
 
-	source         ContainerSource
 	containerArgs  []string
 	ports          nat.PortSet
 	portBindings   nat.PortMap
@@ -53,7 +52,6 @@ type Options struct {
 }
 
 type UpdateEvent struct {
-	// Source        ContainerSource
 	Payload       []byte // input
 	OutputStream  io.Writer
 	Obtained      barrier.Barrier
@@ -163,8 +161,6 @@ func ActionRun(c *cli.Context) {
 		options.containerArgs = c.Args()
 
 	} else if len(c.Args()) == 0 {
-		options.source.Type = BuildCwd
-
 		imageSource = &source.CwdSource{}
 
 	} else {
@@ -173,10 +169,10 @@ func ActionRun(c *cli.Context) {
 
 		if first == "@" {
 			// If the first arg is "@", then use the Cwd
-			options.source.Type = BuildCwd
+			imageSource = &source.CwdSource{}
 		} else {
-			options.source.Type = DockerPull
-			options.source.dockerImageName = first
+			// The argument is a repository[:tag] to pull and run.
+			imageSource = source.DockerPullSourceFromImage(first)
 		}
 		options.containerArgs = args
 	}
