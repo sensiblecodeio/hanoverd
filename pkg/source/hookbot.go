@@ -12,6 +12,7 @@ var (
 	hookbotGithostRe = regexp.MustCompile("^/sub/([^/]+)/repo/([^/]+)/([^/]+)" +
 		"/branch/([^/#]+)(?:#(.*))?$")
 	hookbotDockerPullSub = regexp.MustCompile("^/sub/docker-pull/(.*)/tag/([^/]+)$")
+	hookbotCwdRe         = regexp.MustCompile("^/sub/hanoverd/cwd$")
 )
 
 func GetSourceFromHookbot(hookbotURLStr string) (string, ImageSource, error) {
@@ -28,6 +29,9 @@ func GetSourceFromHookbot(hookbotURLStr string) (string, ImageSource, error) {
 
 	case hookbotDockerPullSub.MatchString(hookbotURL.Path):
 		return NewDockerPullSource(hookbotURL)
+
+	case hookbotCwdRe.MatchString(hookbotURL.Path):
+		return "cwd", &CwdSource{}, nil
 	}
 
 	return "", nil, fmt.Errorf("Unrecogized hookbot URL %q", hookbotURL.Path)
