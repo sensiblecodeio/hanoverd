@@ -12,6 +12,8 @@ import (
 
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
+
+	"github.com/scraperwiki/hanoverd/pkg/source"
 )
 
 type Container struct {
@@ -252,7 +254,7 @@ func (c *Container) err(err error) {
 
 // Manage the whole lifecycle of the container in response to a request to
 // start it.
-func (c *Container) Run(imageSource ImageSource, payload []byte) (int, error) {
+func (c *Container) Run(imageSource source.ImageSource, payload []byte) (int, error) {
 
 	defer c.Closing.Fall()
 	defer close(c.errorsW)

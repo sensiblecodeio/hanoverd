@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/fsouza/go-dockerclient"
-	"github.com/scraperwiki/git-prep-directory"
+	git "github.com/scraperwiki/git-prep-directory"
+
+	"github.com/scraperwiki/hanoverd/pkg/util"
 )
 
 // Invoke a `command` in `workdir` with `args`, connecting up its Stdout and Stderr
@@ -64,7 +66,7 @@ func RunDaemon() {
 
 func DaemonRoutes() {
 
-	underlying, err := dockerConnect()
+	underlying, err := util.DockerConnect()
 	if err != nil {
 		log.Fatal("Unable to connect to client")
 	}

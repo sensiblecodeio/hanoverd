@@ -22,6 +22,10 @@ import (
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
 	"github.com/scraperwiki/hookbot/pkg/listen"
+
+	"github.com/scraperwiki/hanoverd/pkg/builder"
+	"github.com/scraperwiki/hanoverd/pkg/source"
+	"github.com/scraperwiki/hanoverd/pkg/util"
 )
 
 // DockerErrorStatus returns the HTTP status code represented by `err` or Status
@@ -112,7 +116,7 @@ func main() {
 	app.Commands = []cli.Command{
 		{
 			Name:   "builder",
-			Action: ActionBuilder,
+			Action: builder.Action,
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "listen",
@@ -135,97 +139,6 @@ func main() {
 	app.RunAndExitOnError()
 }
 
-func ActionBuilder(c *cli.Context) {
-	_, imageSource, err := GetSourceFromHookbot(c.String("listen"))
-	if err != nil {
-		log.Fatalf("Failed to parse hookbot listen URL: %v", err)
-	}
-
-	repository, tag, err := ParseHookbotDockerPullPubEndpoint(c.String("docker-notify"))
-	if err != nil {
-		log.Fatalf("Failed to parse hookbot notify URL: %v", err)
-	}
-
-	tagOpts := docker.TagImageOptions{Repo: repository, Tag: tag}
-	tagOpts.Force = true
-
-	registry, imageName := ParseRegistryImage(repository)
-	log.Printf("Registry: %v, image: %v", registry, imageName)
-
-	client, err := dockerConnect()
-	if err != nil {
-		log.Fatalf("Unable to connect to docker: %v", err)
-	}
-
-	hookbotURL := c.String("listen")
-	// Remove the #anchor part of the URL, if specified.
-	hookbotURL = strings.SplitN(hookbotURL, "#", 2)[0]
-
-	finish := make(chan struct{})
-	header := http.Header{}
-	events, errs := listen.RetryingWatch(hookbotURL, header, finish)
-
-	go func() {
-		defer close(finish)
-
-		for err := range errs {
-			log.Printf("Error in hookbot event stream: %v", err)
-		}
-
-		log.Printf("Error stream finished")
-	}()
-
-	build := func() error {
-		name, err := imageSource.Obtain(client, []byte{})
-		if err != nil {
-			return fmt.Errorf("obtain: %v", err)
-		}
-
-		log.Printf("Tag image...")
-		err = client.TagImage(name, tagOpts)
-		if err != nil {
-			return fmt.Errorf("tagimage: %v", err)
-		}
-
-		opts := docker.PushImageOptions{
-			// Registry:     registry,
-			Name:         repository,
-			Tag:          tagOpts.Tag,
-			OutputStream: os.Stderr,
-		}
-
-		log.Printf("Push image...")
-		err = client.PushImage(opts, docker.AuthConfiguration{})
-		if err != nil {
-			return fmt.Errorf("pushimage: %v", err)
-		}
-
-		log.Printf("Notify docker endpoint...")
-		resp, err := http.Post(c.String("docker-notify"), "text/plain", strings.NewReader("UPDATE\n"))
-		if err != nil {
-			return fmt.Errorf("notify hookbot of push: %v", err)
-		}
-		log.Printf("Response from notify: %v", resp.StatusCode)
-		return nil
-	}
-
-	err = build()
-	if err != nil {
-		log.Printf("Build failed: %v", err)
-	}
-
-	for _ = range events {
-		log.Printf("Event!")
-
-		err := build()
-		if err != nil {
-			log.Printf("Build failed: %v", err)
-		}
-	}
-
-	log.Printf("Event stream finished")
-}
-
 func ActionRun(c *cli.Context) {
 	var err error
 
@@ -236,12 +149,12 @@ func ActionRun(c *cli.Context) {
 	options.disableOverlap = c.Bool("disable-overlap")
 
 	containerName := "hanoverd"
-	var imageSource ImageSource
+	var imageSource source.ImageSource
 
 	if c.GlobalString("hookbot") != "" {
 
 		hookbotURL := c.GlobalString("hookbot")
-		containerName, imageSource, err = GetSourceFromHookbot(hookbotURL)
+		containerName, imageSource, err = source.GetSourceFromHookbot(hookbotURL)
 		if err != nil {
 			log.Fatalf("Failed to parse hookbot source: %v", err)
 		}
@@ -251,7 +164,7 @@ func ActionRun(c *cli.Context) {
 	} else if len(c.Args()) == 0 {
 		options.source.Type = BuildCwd
 
-		imageSource = &CwdSource{}
+		imageSource = &source.CwdSource{}
 
 	} else {
 		first := c.Args().First()
@@ -393,43 +306,16 @@ func makeEnv(opts []string) []string {
 	return env
 }
 
-func dockerConnect() (*docker.Client, error) {
-	docker_host := os.Getenv("DOCKER_HOST")
-	if docker_host == "" {
-		docker_host = "unix:///run/docker.sock"
-	}
-
-	docker_tls_verify := os.Getenv("DOCKER_TLS_VERIFY") != ""
-
-	var (
-		client *docker.Client
-		err    error
-	)
-	if docker_tls_verify {
-		docker_cert_path := os.Getenv("DOCKER_CERT_PATH")
-		docker_cert := docker_cert_path + "/cert.pem"
-		docker_key := docker_cert_path + "/key.pem"
-		// TODO there's no environment variable option in docker client for
-		// this, it's called -tlscacert in its command line. We'll leave it
-		// as the default (no CA, just trust) which boot2docker uses.
-		docker_ca := ""
-		client, err = docker.NewTLSClient(docker_host, docker_cert, docker_key, docker_ca)
-	} else {
-		client, err = docker.NewClient(docker_host)
-	}
-	return client, err
-}
-
 // Main loop managing the lifecycle of all containers.
 func loop(
 	containerName string,
-	imageSource ImageSource,
+	imageSource source.ImageSource,
 	wg *sync.WaitGroup,
 	dying *barrier.Barrier,
 	options Options,
 	events <-chan *UpdateEvent,
 ) {
-	client, err := dockerConnect()
+	client, err := util.DockerConnect()
 	if err != nil {
 		dying.Fall()
 		log.Println("Connecting to Docker failed:", err)
