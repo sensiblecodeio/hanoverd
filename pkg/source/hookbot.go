@@ -1,4 +1,4 @@
-package main
+package source
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ var (
 	hookbotGithostRe = regexp.MustCompile("^/sub/([^/]+)/repo/([^/]+)/([^/]+)" +
 		"/branch/([^/#]+)(?:#(.*))?$")
 	hookbotDockerPullSub = regexp.MustCompile("^/sub/docker-pull/(.*)/tag/([^/]+)$")
-	hookbotDockerPullPub = regexp.MustCompile("^/pub/docker-pull/(.*)/tag/([^/]+)$")
+	hookbotCwdRe         = regexp.MustCompile("^/sub/hanoverd/cwd$")
 )
 
 func GetSourceFromHookbot(hookbotURLStr string) (string, ImageSource, error) {
@@ -29,6 +29,9 @@ func GetSourceFromHookbot(hookbotURLStr string) (string, ImageSource, error) {
 
 	case hookbotDockerPullSub.MatchString(hookbotURL.Path):
 		return NewDockerPullSource(hookbotURL)
+
+	case hookbotCwdRe.MatchString(hookbotURL.Path):
+		return "cwd", &CwdSource{}, nil
 	}
 
 	return "", nil, fmt.Errorf("Unrecogized hookbot URL %q", hookbotURL.Path)
@@ -78,19 +81,4 @@ func NewDockerPullSource(hookbotURL *url.URL) (string, ImageSource, error) {
 
 	containerName := path.Base(repository)
 	return containerName, imageSource, nil
-}
-
-func ParseHookbotDockerPullPubEndpoint(hookbotURLStr string) (image, tag string, err error) {
-	u, err := url.Parse(hookbotURLStr)
-	if err != nil {
-		return "", "", err
-	}
-
-	parts := hookbotDockerPullPub.FindStringSubmatch(u.Path)
-	if parts == nil {
-		return "", "", fmt.Errorf("Pub URL %q doesn't match: %q",
-			u.Path, hookbotDockerPullPub.String())
-	}
-
-	return parts[1], parts[2], nil
 }

@@ -1,4 +1,4 @@
-package main
+package source
 
 import (
 	"encoding/json"
@@ -8,13 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/fsouza/go-dockerclient"
-	"github.com/scraperwiki/git-prep-directory"
+	git "github.com/scraperwiki/git-prep-directory"
 )
 
 type ImageSource interface {
@@ -43,6 +42,19 @@ func (s *CwdSource) Obtain(c *docker.Client, payload []byte) (string, error) {
 
 type DockerPullSource struct {
 	Repository, Tag string
+}
+
+var imageTag = regexp.MustCompile("^([^:]+):?(.*)$")
+
+// DockerPullSourceFromImage creates a *DockerPullSource from an image name
+// (with an optional tag)
+func DockerPullSourceFromImage(image string) *DockerPullSource {
+	parts := imageTag.FindStringSubmatch(image)
+	if len(parts) != 2 {
+		log.Panicf("imageTag regexp failed to match %q", image)
+	}
+	image, tag := parts[0], parts[1]
+	return &DockerPullSource{image, tag}
 }
 
 func (s *DockerPullSource) Obtain(c *docker.Client, payload []byte) (string, error) {
@@ -239,18 +251,4 @@ func PullProgressCopier(target io.Writer) (io.WriteCloser, <-chan error) {
 		}
 	}()
 	return wrappedWriter, errorC
-}
-
-func ParseRegistryImage(fullName string) (registry, repository string) {
-	var (
-		DotBeforeSlash = regexp.MustCompile("^[^/]+\\.[^/]+/")
-	)
-
-	if DotBeforeSlash.MatchString(fullName) {
-		parts := strings.SplitN(fullName, "/", 2)
-		return parts[0], parts[1]
-	}
-
-	// No registry specified
-	return "", fullName
 }

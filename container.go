@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -12,6 +11,8 @@ import (
 
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
+
+	"github.com/scraperwiki/hanoverd/pkg/source"
 )
 
 type Container struct {
@@ -30,27 +31,6 @@ type Container struct {
 
 	Errors  <-chan error
 	errorsW chan<- error
-}
-
-type SourceType int
-
-const (
-	// Run build with current directory with context
-	BuildCwd            SourceType = iota
-	BuildTarballContent            // Build with specified io.Reader as context
-	BuildTarballURL                // Build with specified remote URL as context
-	DockerPull                     // Run a docker pull to obtain the image
-	GithubRepository               // build a github repository by making a local mirror
-)
-
-type ContainerSource struct {
-	Type                SourceType
-	buildTarballContent io.Reader
-	buildDirectory      string
-	buildTarballURL     string
-	dockerImageName     string
-	githubURL           string
-	githubRef           string
 }
 
 // Construct a *Container. When the `wg` WaitGroup is zero, there is nothing
@@ -257,7 +237,7 @@ func (c *Container) err(err error) {
 
 // Manage the whole lifecycle of the container in response to a request to
 // start it.
-func (c *Container) Run(imageSource ImageSource, payload []byte) (int, error) {
+func (c *Container) Run(imageSource source.ImageSource, payload []byte) (int, error) {
 
 	defer c.Closing.Fall()
 	defer close(c.errorsW)

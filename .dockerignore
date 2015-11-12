@@ -1,0 +1,11 @@
+./.git
+./vendor/github.com/codegangsta/cli/.git
+./vendor/github.com/docker/docker/.git
+./vendor/github.com/fsouza/go-dockerclient/.git
+./vendor/github.com/pwaller/barrier/.git
+./vendor/github.com/scraperwiki/hookbot/.git
+./vendor/github.com/gorilla/websocket/.git
+./vendor/github.com/vaughan0/go-ini/.git
+./vendor/golang.org/x/net/.git
+./vendor/golang.org/x/sys/.git
+./iptables
