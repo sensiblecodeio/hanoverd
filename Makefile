@@ -1,19 +1,12 @@
 all: hanoverd
 
+# So that make knows about hanoverd's other dependencies.
+-include hanoverd.deps
+
 # Compute a file that looks like "hanoverd: file.go" for all go source files
 # that hanoverd depends on.
 hanoverd.deps:
-	# 1) Get recursive list of deps.
-	# 2) Filter out stdlib.
-	# 3) Print all Go source files used in the package.
-	# 4) Use sed to only catch lines which are in this directory and remove $PWD.
-	go list -f '{{.ImportPath}}{{"\n"}}{{range .Deps}}{{.}}{{"\n"}}{{end}}' . | \
-	xargs go list -f '{{if not .Standard}}{{.ImportPath}}{{end}}' | \
-	xargs go list -f '{{with $$p := .}}{{range .GoFiles}}{{$$p.Dir}}/{{.}}{{"\n"}}{{end}}{{end}}' | \
-	sed --quiet 's|^'$(shell pwd)/'|hanoverd: |p' > hanoverd.deps
-
-# So that make knows about hanoverd's other dependencies.
--include hanoverd.deps
+	./generate-deps.sh hanoverd . > $@
 
 hanoverd: hanoverd.deps
 	# Build hanoverd using
@@ -33,4 +26,7 @@ iptables:
 test: hanoverd iptables
 	@PATH=.:$(PATH) go test -v ./tests
 
+# GNU Make instructions
 .PHONY: release test
+# Required for hanoverd.deps
+.DELETE_ON_ERROR:
