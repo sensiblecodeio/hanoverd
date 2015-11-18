@@ -9,7 +9,7 @@ services:
   - docker
 
 install:
-  - make
+  - GO15VENDOREXPERIMENT=1 make
 
 script:
   - ls -la hanoverd
