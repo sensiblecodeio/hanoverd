@@ -13,3 +13,4 @@ install:
 
 script:
   - ls -la hanoverd
+  - GO15VENDOREXPERIMENT=1 make test
