@@ -36,7 +36,24 @@ func (s *CwdSource) Obtain(c *docker.Client, payload []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = DockerBuildDirectory(c, imageName, ".")
+
+	buildPath := "."
+	err = DockerBuildDirectory(c, imageName, buildPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Test for the presence of a 'runtime/Dockerfile' in the buildpath.
+	// If it's there, then we run the image we just built, and use its
+	// stdout as a build context
+	if exists(filepath.Join(buildPath, "runtime", "Dockerfile")) {
+		log.Printf("Generate runtime image")
+		imageName, err = constructRuntime(c, imageName)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	return imageName, nil
 }
 
@@ -157,11 +174,38 @@ func (s *GitHostSource) Obtain(c *docker.Client, payload []byte) (string, error)
 	}
 
 	// Test for the presence of a 'runtime/Dockerfile' in the buildpath.
+	// If it's there, then we run the image we just built, and use its
+	// stdout as a build context
 	if exists(filepath.Join(buildPath, "runtime", "Dockerfile")) {
-
+		dockerImage, err = constructRuntime(c, dockerImage)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	return dockerImage, nil
+}
+
+func constructRuntime(c *docker.Client, dockerImage string) (string, error) {
+	stdout, err := DockerRun(c, dockerImage)
+	if err != nil {
+		return "", fmt.Errorf("run buildtime image: %v", err)
+	}
+
+	err = c.BuildImage(docker.BuildImageOptions{
+		Name: dockerImage + "-runtime",
+		// OutputStream is an io.Reader, but it gets typecast
+		// to an io.ReadCloser and closes the body inside
+		// net/http's Request type.
+		// stdout is closed inside here.
+		InputStream:  stdout,
+		OutputStream: os.Stderr,
+	})
+	if err != nil {
+		return "", fmt.Errorf("BuildImage -runtime: %v", err)
+	}
+
+	return dockerImage + "-runtime", nil
 }
 
 func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
@@ -178,27 +222,55 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 		},
 	})
 	if err != nil {
-		return nil, err
-	}
-
-	err = c.StartContainer(cont.ID, &docker.HostConfig{})
-	if err != nil {
+		log.Printf("Create container... failed: %v", err)
 		return nil, err
 	}
 
 	r, w := io.Pipe()
+	attached := make(chan struct{})
+	detached := make(chan struct{})
 
-	err = c.AttachToContainer(docker.AttachToContainerOptions{
-		Container:    cont.ID,
-		OutputStream: w,
-		ErrorStream:  os.Stderr,
-		Logs:         true,
-		Stdout:       true,
-		Stderr:       true,
-		Stream:       true,
-	})
+	go func() {
+		defer close(detached)
+
+		err := c.AttachToContainer(docker.AttachToContainerOptions{
+			Container:    cont.ID,
+			OutputStream: w,
+			ErrorStream:  os.Stderr,
+			Logs:         true,
+			Stdout:       true,
+			Stderr:       true,
+			Stream:       true,
+			Success:      attached,
+		})
+		// io.Pipe hardwired to never return error here.
+		_ = w.CloseWithError(err)
+	}()
+
+	select {
+	case <-detached:
+		// attachment failed
+		log.Printf("Attachment failed")
+		return nil, fmt.Errorf("Attachment failed")
+	case <-attached:
+		attached <- struct{}{}
+	}
+
+	err = c.StartContainer(cont.ID, &docker.HostConfig{})
 	if err != nil {
+		log.Printf("Start container... failed: %v", err)
 		return nil, err
+	}
+
+	removeContainer := func() {
+		err := c.RemoveContainer(docker.RemoveContainerOptions{
+			ID:            cont.ID,
+			RemoveVolumes: true,
+			Force:         true,
+		})
+		if err != nil {
+			log.Printf("Error removing intermediate container: %v", err)
+		}
 	}
 
 	return struct {
@@ -207,6 +279,8 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 	}{
 		Reader: r,
 		Closer: CloseFunc(func() error {
+			defer removeContainer()
+
 			status, err := c.WaitContainer(cont.ID)
 			if err != nil {
 				return err
