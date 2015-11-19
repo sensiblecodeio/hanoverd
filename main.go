@@ -321,6 +321,7 @@ func loop(
 	go flipper(wg, options, flips)
 
 	var i int
+	supercede := func() {}
 
 	for event := range events {
 
@@ -343,6 +344,10 @@ func loop(
 
 		// Global exit should cause container exit
 		dying.Forward(&c.Closing)
+
+		// Cancel an existing startup, if there is one.
+		supercede()
+		supercede = c.Superceded.Fall
 
 		wg.Add(1)
 		go func(c *Container) {
