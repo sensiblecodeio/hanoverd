@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/pkg/jsonmessage"
-	"github.com/fsouza/go-dockerclient"
+	docker "github.com/fsouza/go-dockerclient"
 	git "github.com/scraperwiki/git-prep-directory"
 )
 
@@ -36,7 +36,24 @@ func (s *CwdSource) Obtain(c *docker.Client, payload []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = DockerBuildDirectory(c, imageName, ".")
+
+	buildPath := "."
+	err = DockerBuildDirectory(c, imageName, buildPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Test for the presence of a 'runtime/Dockerfile' in the buildpath.
+	// If it's there, then we run the image we just built, and use its
+	// stdout as a build context
+	if exists(filepath.Join(buildPath, "runtime", "Dockerfile")) {
+		log.Printf("Generate runtime image")
+		imageName, err = constructRuntime(c, imageName)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	return imageName, nil
 }
 
@@ -156,7 +173,140 @@ func (s *GitHostSource) Obtain(c *docker.Client, payload []byte) (string, error)
 		return "", err
 	}
 
+	// Test for the presence of a 'runtime/Dockerfile' in the buildpath.
+	// If it's there, then we run the image we just built, and use its
+	// stdout as a build context
+	if exists(filepath.Join(buildPath, "runtime", "Dockerfile")) {
+		dockerImage, err = constructRuntime(c, dockerImage)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	return dockerImage, nil
+}
+
+func constructRuntime(c *docker.Client, dockerImage string) (string, error) {
+	stdout, err := DockerRun(c, dockerImage)
+	if err != nil {
+		return "", fmt.Errorf("run buildtime image: %v", err)
+	}
+
+	err = c.BuildImage(docker.BuildImageOptions{
+		Name: dockerImage + "-runtime",
+		// OutputStream is an io.Reader, but it gets typecast
+		// to an io.ReadCloser and closes the body inside
+		// net/http's Request type.
+		// stdout is closed inside here.
+		InputStream:  stdout,
+		OutputStream: os.Stderr,
+	})
+	if err != nil {
+		return "", fmt.Errorf("BuildImage -runtime: %v", err)
+	}
+
+	return dockerImage + "-runtime", nil
+}
+
+func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
+	cont, err := c.CreateContainer(docker.CreateContainerOptions{
+		Config: &docker.Config{
+			Hostname:     "generateruntimecontext",
+			AttachStdout: true,
+			AttachStderr: true,
+			Image:        imageName,
+			Labels: map[string]string{
+				"orchestrator": "hanoverd",
+				"purpose":      "Generate build context for runtime container",
+			},
+		},
+	})
+	if err != nil {
+		log.Printf("Create container... failed: %v", err)
+		return nil, err
+	}
+
+	r, w := io.Pipe()
+	attached := make(chan struct{})
+	detached := make(chan struct{})
+
+	go func() {
+		defer close(detached)
+
+		err := c.AttachToContainer(docker.AttachToContainerOptions{
+			Container:    cont.ID,
+			OutputStream: w,
+			ErrorStream:  os.Stderr,
+			Logs:         true,
+			Stdout:       true,
+			Stderr:       true,
+			Stream:       true,
+			Success:      attached,
+		})
+		// io.Pipe hardwired to never return error here.
+		_ = w.CloseWithError(err)
+	}()
+
+	select {
+	case <-detached:
+		// attachment failed
+		log.Printf("Attachment failed")
+		return nil, fmt.Errorf("Attachment failed")
+	case <-attached:
+		attached <- struct{}{}
+	}
+
+	err = c.StartContainer(cont.ID, &docker.HostConfig{})
+	if err != nil {
+		log.Printf("Start container... failed: %v", err)
+		return nil, err
+	}
+
+	removeContainer := func() {
+		err := c.RemoveContainer(docker.RemoveContainerOptions{
+			ID:            cont.ID,
+			RemoveVolumes: true,
+			Force:         true,
+		})
+		if err != nil {
+			log.Printf("Error removing intermediate container: %v", err)
+		}
+	}
+
+	return struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: r,
+		Closer: CloseFunc(func() error {
+			defer removeContainer()
+
+			status, err := c.WaitContainer(cont.ID)
+			if err != nil {
+				return err
+			}
+			if status != 0 {
+				return fmt.Errorf("non-zero exit status: %v", err)
+			}
+			return nil
+		}),
+	}, err
+}
+
+type CloseFunc func() error
+
+func (fn CloseFunc) Close() error { return fn() }
+
+func exists(filename string) bool {
+	_, err := os.Stat(filename)
+	switch {
+	case err == nil:
+		return true
+	default:
+		log.Printf("Error checking for the existence of %q: %v", filename, err)
+	case os.IsNotExist(err):
+	}
+	return false
 }
 
 // Returns true if $HOME/.ssh exists, false otherwise
