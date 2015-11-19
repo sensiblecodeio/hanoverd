@@ -11,6 +11,7 @@ github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/externa
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/archive
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/fileutils
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/homedir
+github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/idtools
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/ioutils
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/parsers
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/pools
@@ -19,10 +20,11 @@ github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/externa
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/system
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/ulimit
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/pkg/units
-github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/docker/docker/volume
+github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/hashicorp/go-cleanhttp
 github.com/scraperwiki/hanoverd/vendor/github.com/fsouza/go-dockerclient/external/github.com/opencontainers/runc/libcontainer/user
 github.com/scraperwiki/hanoverd/vendor/github.com/gorilla/websocket
 github.com/scraperwiki/hanoverd/vendor/github.com/pwaller/barrier
+github.com/scraperwiki/hanoverd/vendor/github.com/scraperwiki/git-prep-directory
 github.com/scraperwiki/hanoverd/vendor/github.com/scraperwiki/hookbot/pkg/listen
 github.com/scraperwiki/hanoverd/vendor/github.com/vaughan0/go-ini
 github.com/scraperwiki/hanoverd/vendor/golang.org/x/net/context
