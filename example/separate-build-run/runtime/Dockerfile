@@ -1,5 +1,6 @@
 FROM scratch
 
-COPY . /
+EXPOSE 8000
+ENTRYPOINT ["/bin/dash", "-c", "while : ; do printf 'HTTP/1.0 200 OK\r\n\r\nHello world from %s\r\n' $(hostname) | nc -l 8000; done"]
 
-ENTRYPOINT ["/bin/dash"]
+COPY . /
