@@ -24,7 +24,7 @@ iptables:
 	sudo setcap 'cap_net_admin,cap_net_raw=+ep' iptables
 
 test: hanoverd iptables
-	@PATH=.:$(PATH) go test -v ./tests
+	PATH=$$PWD:$$PATH go test -v ./tests
 
 # GNU Make instructions
 .PHONY: release test
