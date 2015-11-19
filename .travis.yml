@@ -1,0 +1,16 @@
+sudo: required
+
+language: go
+
+go:
+  - 1.5.1
+
+services:
+  - docker
+
+install:
+  - GO15VENDOREXPERIMENT=1 make
+
+script:
+  - ls -la hanoverd
+  - GO15VENDOREXPERIMENT=1 make test
