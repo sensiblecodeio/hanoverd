@@ -47,7 +47,7 @@ type Options struct {
 	containerArgs  []string
 	ports          nat.PortSet
 	portBindings   nat.PortMap
-	statusURI      string
+	statusURL      string
 	disableOverlap bool
 }
 
@@ -99,9 +99,10 @@ func main() {
 			Value: &cli.StringSlice{},
 		},
 		cli.StringFlag{
-			Name:  "status-uri",
-			Usage: "specify URI which returns 200 OK when functioning correctly",
-			Value: "/",
+			Name: "status-url",
+			Usage: "specify URL on the host which returns 200 OK " +
+				"when functioning correctly after starting",
+			Value: "http://localhost:8080/",
 		},
 		cli.StringFlag{
 			Name:   "hookbot",
@@ -144,7 +145,7 @@ func ActionRun(c *cli.Context) {
 	options := Options{}
 	options.volumes = c.StringSlice("volume")
 	options.env = makeEnv(c.StringSlice("env"))
-	options.statusURI = c.String("status-uri")
+	options.statusURL = c.String("status-url")
 	options.disableOverlap = c.Bool("disable-overlap")
 
 	containerName := "hanoverd"
@@ -338,7 +339,7 @@ func loop(
 		c.Args = options.containerArgs
 		c.Env = options.env
 		c.Volumes = options.volumes
-		c.StatusURI = options.statusURI
+		c.StatusURL = options.statusURL
 
 		c.Obtained.Forward(&event.Obtained)
 
@@ -371,7 +372,7 @@ func loop(
 		go func(c *Container) {
 			defer wg.Done()
 
-			log.Printf("Awaiting container fate: %q %q", c.Name, c.StatusURI)
+			log.Printf("Awaiting container fate: %q %q", c.Name, c.StatusURL)
 			select {
 			case <-c.Failed.Barrier():
 				log.Println("Container failed before going live:", c.Name)

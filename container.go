@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -20,7 +19,7 @@ type Container struct {
 	ImageName string
 	Args, Env []string
 	Volumes   []string
-	StatusURI string
+	StatusURL string
 
 	client    *docker.Client
 	container *docker.Container
@@ -120,12 +119,6 @@ func (c *Container) CopyOutput() error {
 // Poll for the program inside the container being ready to accept connections
 // Returns `true` for success and `false` for failure.
 func (c *Container) AwaitListening() bool {
-
-	if len(c.container.NetworkSettings.PortMappingAPI()) == 0 {
-		log.Printf("Error! No ports are exposed.")
-		return false
-	}
-
 	const (
 		DefaultTimeout = 5 * time.Minute
 		PollFrequency  = 10 // times per second (via integer division of ns)
@@ -133,39 +126,39 @@ func (c *Container) AwaitListening() bool {
 
 	startDeadline := time.Now().Add(DefaultTimeout)
 
-	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
-		url := fmt.Sprint("http://", port.IP, ":", port.PublicPort, c.StatusURI)
-		for {
-			response, err := http.Get(url)
-			if response != nil && response.Body != nil {
-				response.Body.Close()
-			}
-			if err == nil {
-				switch response.StatusCode {
-				case http.StatusOK:
-					return true
-				case http.StatusNotFound:
-				default:
-					log.Printf("Got non-200 status code: %v, giving up",
-						response.StatusCode)
-					c.Failed.Fall()
-					return false
-				}
-			}
+	url := strings.Replace(c.StatusURL, "localhost", c.container.NetworkSettings.IPAddress, 1)
+	log.Printf("Poll %q", url)
 
-			if time.Now().After(startDeadline) {
-				log.Printf("Took longer than %v to start, giving up", DefaultTimeout)
-				return false
-			}
-
-			time.Sleep(time.Second / PollFrequency)
-
-			select {
-			case <-c.Closing.Barrier():
-				// If the container has closed, cease waiting
-				return false
+	for {
+		response, err := http.Get(url)
+		if response != nil && response.Body != nil {
+			response.Body.Close()
+		}
+		if err == nil {
+			switch response.StatusCode {
+			case http.StatusOK:
+				return true
+			case http.StatusNotFound:
 			default:
+				log.Printf("Got non-200 status code: %v, giving up",
+					response.StatusCode)
+				c.Failed.Fall()
+				return false
 			}
+		}
+
+		if time.Now().After(startDeadline) {
+			log.Printf("Took longer than %v to start, giving up", DefaultTimeout)
+			return false
+		}
+
+		time.Sleep(time.Second / PollFrequency)
+
+		select {
+		case <-c.Closing.Barrier():
+			// If the container has closed, cease waiting
+			return false
+		default:
 		}
 	}
 
