@@ -21,6 +21,9 @@ const (
 // empty string on error.
 func simpleGetHTTP(url string) string {
 	r, err := http.Get(url)
+	if r != nil && r.Body != nil {
+		defer r.Body.Close()
+	}
 	if err != nil {
 		return ""
 	}
