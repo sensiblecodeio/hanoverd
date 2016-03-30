@@ -158,6 +158,8 @@ func TestMultiplePortPolling(t *testing.T) {
 	start := time.Now()
 	lastResponse := ""
 
+	seenOne := false
+
 loop:
 	for {
 		select {
@@ -172,6 +174,15 @@ loop:
 			lastResponse = response
 			start = time.Now()
 			cmd.Process.Signal(syscall.SIGHUP)
+			seenOne = true
+		}
+
+		log.Printf("Got response from server: %q", response)
+
+		if seenOne && response == "" {
+			t.Errorf("Received empty response from server. Handover failure?")
+			cmd.Process.Signal(syscall.SIGTERM)
+			break loop
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
