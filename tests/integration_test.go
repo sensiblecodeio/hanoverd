@@ -68,6 +68,18 @@ func TestCWDBuildsAdvance(t *testing.T) {
 		"Hello from hanoverd_2\r\n": "",
 	}
 
+	finished := make(chan struct{})
+	defer close(finished)
+
+	go func() {
+		select {
+		case <-time.After(timeout):
+			cmd.Process.Signal(syscall.SIGQUIT)
+
+		case <-finished:
+		}
+	}()
+
 	// Rapidly loop doing HTTP requests.
 loop:
 	for {
