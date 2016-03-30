@@ -116,3 +116,57 @@ loop:
 
 	log.Printf("Success!")
 }
+
+func TestMultiplePortPolling(t *testing.T) {
+
+	examplePath, err := filepath.Abs(filepath.Join("multiple-ports"))
+	if err != nil {
+		t.Fatalf("Unable to determine multiple-ports path: %v", err)
+	}
+
+	// Spawn hanoverd in the example directory
+
+	cmd := exec.Command("hanoverd", "--publish", testPort+":80")
+	cmd.Dir = examplePath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err = cmd.Start()
+	if err != nil {
+		t.Fatalf("hanoverd failed to start, is it installed?: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		time.Sleep(60 * time.Second)
+		cmd.Process.Signal(syscall.SIGTERM)
+	}()
+
+	start := time.Now()
+	lastResponse := ""
+
+loop:
+	for {
+		select {
+		case <-done:
+			break loop
+		default:
+		}
+
+		response := simpleGetHTTP("http://localhost:" + testPort)
+		if response != lastResponse && response != "" {
+			log.Printf("Server came up in %v, response: %q", time.Since(start), response)
+			lastResponse = response
+			start = time.Now()
+			cmd.Process.Signal(syscall.SIGHUP)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	err = cmd.Wait()
+	if err != nil {
+		t.Fatalf("waiting on hanoverd: %v", err)
+	}
+
+}

@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -24,7 +25,8 @@ func main() {
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "OK")
+		hostname, _ := os.Hostname()
+		fmt.Fprintln(w, hostname)
 	})
 
 	server := http.Server{TLSConfig: cfg}
