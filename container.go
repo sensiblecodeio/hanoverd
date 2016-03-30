@@ -130,7 +130,7 @@ func (c *Container) AwaitListening() error {
 		PollFrequency  = 5 // approx. times per second.
 	)
 
-	success := make(chan chan struct{}, len(c.container.NetworkSettings.PortMappingAPI()))
+	success := make(chan chan struct{})
 	finished := make(chan struct{})
 	defer close(finished)
 
@@ -168,8 +168,13 @@ func (c *Container) AwaitListening() error {
 			// has been acknowledged, otherwise we may hit
 			// noPollersRemain.
 			response := make(chan struct{})
-			success <- response
-			<-response
+			select {
+			case success <- response:
+				<-response
+			case <-finished:
+				// Something else caused success/failure,
+				// we'll never be able to communicate success.
+			}
 			return false
 
 		default:
