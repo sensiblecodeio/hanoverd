@@ -37,7 +37,6 @@ func simpleGetHTTP(url string) string {
 // TestCWDBuildsAdvance attempts to run hanoverd in CWD-build mode in the
 // examples directory. It checks that the hostname advances.
 func TestCWDBuildsAdvance(t *testing.T) {
-
 	examplePath, err := filepath.Abs(filepath.Join("..", "example"))
 	if err != nil {
 		t.Fatalf("Unable to determine example path: %v", err)
@@ -58,6 +57,9 @@ func TestCWDBuildsAdvance(t *testing.T) {
 	// Amount of time we're willing to wait for a state transition.
 	const timeout = 30 * time.Second
 	deadline := time.Now().Add(timeout)
+
+	// State machine. If we see a certain string, what string do we expect
+	// to see next?
 
 	current := ""
 	wanted := "Hello from hanoverd_0\r\n"
@@ -130,7 +132,6 @@ loop:
 }
 
 func TestMultiplePortPolling(t *testing.T) {
-
 	examplePath, err := filepath.Abs(filepath.Join("multiple-ports"))
 	if err != nil {
 		t.Fatalf("Unable to determine multiple-ports path: %v", err)
@@ -151,7 +152,9 @@ func TestMultiplePortPolling(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		time.Sleep(60 * time.Second)
+		// How long to keep invoking SIGHUP for in a loop?
+		const testLength = 1 * time.Minute
+		time.Sleep(testLength)
 		cmd.Process.Signal(syscall.SIGTERM)
 	}()
 
@@ -191,5 +194,4 @@ loop:
 	if err != nil {
 		t.Fatalf("waiting on hanoverd: %v", err)
 	}
-
 }
