@@ -47,33 +47,27 @@ func CheckIPTables() error {
 // Invoke one iptables command.
 // Expects "iptables" in the path to be runnable with reasonable permissions.
 func iptables(action Action, chain string, source, target int, ipAddress string) *exec.Cmd {
-	var cmd *exec.Cmd
+	args := []string{
+		"--table", "nat",
+		"--protocol", "tcp",
+		// Prevent redirection of packets already going to the container
+		"--match", "tcp", "!", "--destination", ipAddress,
+		// Prevent redirection of ports on remote servers
+		// (i.e, don't make google:80 hit our container)
+		"--match", "addrtype", "--dst-type", "LOCAL",
+		"--dport", fmt.Sprint(source),
+		"--jump", "REDIRECT",
+		"--to-ports", fmt.Sprint(target), "--wait",
+	}
 
 	switch action {
 	case INSERT:
-		cmd = exec.Command(
-			IPTablesPath, "--insert", chain, "1",
-			"--table", "nat",
-			"--protocol", "tcp",
-			// Prevent redirection of packets already going to the container
-			"--match", "tcp", "!", "--destination", ipAddress,
-			// Prevent redirection of ports on remote servers
-			// (i.e, don't make google:80 hit our container)
-			"--match", "addrtype", "--dst-type", "LOCAL",
-			"--dport", fmt.Sprint(source),
-			"--jump", "REDIRECT",
-			"--to-ports", fmt.Sprint(target), "--wait")
+		args = append([]string{"--insert", chain, "1"}, args...)
 	case DELETE:
-		cmd = exec.Command(
-			IPTablesPath, "--delete", chain,
-			"--table", "nat",
-			"--protocol", "tcp",
-			"--match", "tcp", "!", "--destination", ipAddress,
-			"--match", "addrtype", "--dst-type", "LOCAL",
-			"--dport", fmt.Sprint(source),
-			"--jump", "REDIRECT",
-			"--to-ports", fmt.Sprint(target), "--wait")
+		args = append([]string{"--delete", chain}, args...)
 	}
+
+	cmd := exec.Command(IPTablesPath, args...)
 	cmd.Stderr = os.Stderr
 	return cmd
 }
