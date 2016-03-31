@@ -186,6 +186,12 @@ loop:
 			seenOne = true
 		}
 
+		select {
+		case <-done:
+			break loop
+		default:
+		}
+
 		log.Printf("Got response from server: %q", response)
 
 		if seenOne && response == "" {
