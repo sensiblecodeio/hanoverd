@@ -17,10 +17,16 @@ const (
 	testPort = "50820"
 )
 
+var httpClient = &http.Client{
+	Transport: &http.Transport{
+		DisableKeepAlives: true,
+	},
+}
+
 // simpleGetHTTP returns the body of a HTTP GET response from `url`, or an
 // empty string on error.
 func simpleGetHTTP(url string) string {
-	r, err := http.Get(url)
+	r, err := httpClient.Get(url)
 	if r != nil && r.Body != nil {
 		defer r.Body.Close()
 	}
