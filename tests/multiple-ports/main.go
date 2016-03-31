@@ -27,6 +27,8 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		hostname, _ := os.Hostname()
 		fmt.Fprintln(w, hostname)
+
+		time.Sleep(50 * time.Millisecond)
 	})
 
 	server := http.Server{TLSConfig: cfg}
