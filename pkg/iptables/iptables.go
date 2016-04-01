@@ -31,13 +31,6 @@ func init() {
 // iptables -A OUTPUT -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
 // To delete a rule, use -D rather than -A.
 
-type Action bool
-
-const (
-	INSERT Action = true
-	DELETE        = false
-)
-
 // CheckIPTables ensures that `iptables --list` runs without error.
 func CheckIPTables() error {
 	return execIPTables("--list")
@@ -51,25 +44,38 @@ func execIPTables(args ...string) error {
 	args = append(args, "--wait")
 	cmd := exec.Command(IPTablesPath, args...)
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("firewall rule %q failed to apply: %v", args, err)
+	}
+	return nil
 }
 
-// Invoke one iptables command.
-// Expects "iptables" in the path to be runnable with reasonable permissions.
-func iptables(action Action, chain string, args ...string) error {
-	switch action {
-	case INSERT:
-		args = append([]string{"--insert", chain, "1"}, args...)
-	case DELETE:
-		args = append([]string{"--delete", chain}, args...)
+// iptables inserts one IPTables rule.
+// The rule is inserted as the top rule, so if there are multiple matching
+// rules, last-one wins.
+// It returns a function which applies the inverse of the rule.
+func iptables(chain string, args ...string) (func() error, error) {
+	insertArgs := append([]string{"--insert", chain, "1"}, args...)
+	deleteArgs := append([]string{"--delete", chain}, args...)
+
+	err := execIPTables(insertArgs...)
+	if err != nil {
+		// Rule failed to apply. Inverse is now a no-op.
+		noOp := func() error { return nil }
+		return noOp, err
 	}
 
-	return execIPTables(args...)
+	inverse := func() error {
+		return execIPTables(deleteArgs...)
+	}
+
+	return inverse, nil
 }
 
 // ConfigureRedirect forwards ports from `source` to `target` using iptables.
 // Returns an error and a function which undoes the change to the firewall.
-func ConfigureRedirect(source, target int, ipAddress string) (func(), error) {
+func ConfigureRedirect(source, target int, ipAddress string) (func() error, error) {
 	args := []string{
 		"--table", "nat",
 		"--protocol", "tcp",
@@ -83,24 +89,27 @@ func ConfigureRedirect(source, target int, ipAddress string) (func(), error) {
 		"--to-ports", fmt.Sprint(target),
 	}
 
-	err := iptables(INSERT, "PREROUTING", args...)
+	undoPreroute, err := iptables("PREROUTING", args...)
 	if err != nil {
 		return nil, err
 	}
-	err = iptables(INSERT, "OUTPUT", args...)
+	undoOutput, err := iptables("OUTPUT", args...)
 	if err != nil {
 		return nil, err
 	}
 
-	remove := func() {
-		err := iptables(DELETE, "PREROUTING", args...)
-		if err != nil {
-			log.Println("Failed to remove iptables rule:", source, target)
+	remove := func() error {
+		err1 := undoPreroute()
+		err2 := undoOutput()
+
+		if err1 != nil {
+			return err1
 		}
-		err = iptables(DELETE, "OUTPUT", args...)
-		if err != nil {
-			log.Println("Failed to remove iptables rule:", source, target)
+		if err2 != nil {
+			return err2
 		}
+		return nil
 	}
+
 	return remove, nil
 }
