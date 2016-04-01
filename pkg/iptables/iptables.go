@@ -38,8 +38,18 @@ const (
 	DELETE        = false
 )
 
+// CheckIPTables ensures that `iptables --list` runs without error.
 func CheckIPTables() error {
-	cmd := exec.Command(IPTablesPath, "--list", "--wait")
+	return execIPTables("--list")
+}
+
+// runIPTables invokes iptables with `args`.
+// It appends --wait to the end, ensuring that we don't return before the
+// command takes effect.
+// iptables' stderr is connected to os.Stderr.
+func execIPTables(args ...string) error {
+	args = append(args, "--wait")
+	cmd := exec.Command(IPTablesPath, args...)
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
@@ -54,12 +64,10 @@ func iptables(action Action, chain string, args ...string) error {
 		args = append([]string{"--delete", chain}, args...)
 	}
 
-	cmd := exec.Command(IPTablesPath, args...)
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return execIPTables(args...)
 }
 
-// Configure one port redirect from `source` to `target` using iptables.
+// ConfigureRedirect forwards ports from `source` to `target` using iptables.
 // Returns an error and a function which undoes the change to the firewall.
 func ConfigureRedirect(source, target int, ipAddress string) (func(), error) {
 	args := []string{
@@ -72,7 +80,7 @@ func ConfigureRedirect(source, target int, ipAddress string) (func(), error) {
 		"--match", "addrtype", "--dst-type", "LOCAL",
 		"--dport", fmt.Sprint(source),
 		"--jump", "REDIRECT",
-		"--to-ports", fmt.Sprint(target), "--wait",
+		"--to-ports", fmt.Sprint(target),
 	}
 
 	err := iptables(INSERT, "PREROUTING", args...)
