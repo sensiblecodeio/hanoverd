@@ -8,10 +8,9 @@ import (
 	"path/filepath"
 )
 
-var IPTablesPath = "iptables"
+var iptablesPath = "iptables"
 
 func init() {
-
 	err := CheckIPTables()
 	if err != nil {
 		log.Printf("Unable to find iptables, using fallback")
@@ -19,9 +18,8 @@ func init() {
 		if err != nil {
 			return
 		}
-		IPTablesPath = filepath.Join(wd, IPTablesPath)
+		iptablesPath = filepath.Join(wd, iptablesPath)
 	}
-
 }
 
 // NOTEs from messing with iptables proxying:
@@ -42,7 +40,7 @@ func CheckIPTables() error {
 // iptables' stderr is connected to os.Stderr.
 func execIPTables(args ...string) error {
 	args = append(args, "--wait")
-	cmd := exec.Command(IPTablesPath, args...)
+	cmd := exec.Command(iptablesPath, args...)
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
