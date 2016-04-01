@@ -91,6 +91,7 @@ func localhostRedirect(source, mappedPort int, ip string, target int) []string {
 		// Prevent redirection of packets already going to the container
 		"--match", "tcp",
 		"!", "--destination", ip,
+		// Traffic destined for one of the host's interfaces.
 		// Prevent redirection of ports on remote servers
 		// (i.e, don't make google.com:source hit our container)
 		"--match", "addrtype", "--dst-type", "LOCAL",
@@ -107,6 +108,10 @@ func remoteTrafficDNAT(source int, ip string, target int) []string {
 		"--table", "nat",
 		"--protocol", "tcp",
 		"--match", "tcp",
+		// Traffic destined for one of the host's interfaces.
+		// Prevent redirection of ports on remote servers
+		// (i.e, don't make google.com:source hit our container)
+		"--match", "addrtype", "--dst-type", "LOCAL",
 		// Traffic destined for the source port.
 		"--destination-port", fmt.Sprint(source),
 		"--jump", "DNAT",
