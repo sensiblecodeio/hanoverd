@@ -64,7 +64,27 @@ func iptables(chain string, args ...string) (func() error, error) {
 	return inverse, nil
 }
 
-func localhostRedirect(source, mappedPort int, ip string) []string {
+func localnetRoutingEnabled() bool {
+	fd, err := os.Open("/proc/sys/net/ipv4/conf/docker0/route_localnet")
+	if err != nil {
+		return false
+	}
+	var routeLocalnet int
+	_, err = fmt.Fscan(fd, &routeLocalnet)
+	if err != nil {
+		return false
+	}
+	return routeLocalnet == 1
+}
+
+func localhostRedirect(source, mappedPort int, ip string, target int) []string {
+	if localnetRoutingEnabled() {
+		// route_localnet is enabled on the docker bridge.
+		// So we can use the same rule as for the remote traffic,
+		// except that the rule is applied on the OUTPUT chain instead
+		// of the PREROUTING chain.
+		return remoteTrafficDNAT(source, ip, target)
+	}
 	return []string{
 		"--table", "nat",
 		"--protocol", "tcp",
@@ -144,7 +164,7 @@ func ConfigureRedirect(
 	// OUTPUT rule applies to traffic hitting the `localhost` interface.
 	undoOutput, err := iptables(
 		"OUTPUT",
-		localhostRedirect(sourcePort, mappedPort, ipAddress)...,
+		localhostRedirect(sourcePort, mappedPort, ipAddress, targetPort)...,
 	)
 	if err != nil {
 		return nil, err
