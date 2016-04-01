@@ -98,6 +98,7 @@ func localhostRedirect(source, mappedPort int, ip string, target int) []string {
 		"--destination-port", fmt.Sprint(source),
 		"--jump", "REDIRECT",
 		"--to-ports", fmt.Sprint(mappedPort),
+		"-m", "comment", "--comment", "hanoverd-localhostRedirect",
 	}
 }
 
@@ -117,6 +118,7 @@ func remoteTrafficDNAT(source int, ip string, target int) []string {
 		//   --dport {target} -j MASQUERADE
 		// )
 		"--to-destination", fmt.Sprintf("%v:%v", ip, target),
+		"-m", "comment", "--comment", "hanoverd-remoteTrafficDNAT",
 	}
 }
 
