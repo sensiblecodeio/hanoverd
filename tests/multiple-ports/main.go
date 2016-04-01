@@ -25,6 +25,8 @@ func main() {
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Received request from %q", r.RemoteAddr)
+
 		hostname, _ := os.Hostname()
 		fmt.Fprintln(w, hostname)
 
