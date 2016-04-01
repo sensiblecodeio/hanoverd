@@ -22,13 +22,6 @@ func init() {
 	}
 }
 
-// NOTEs from messing with iptables proxying:
-// For external:
-// iptables -A PREROUTING -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
-// For internal:
-// iptables -A OUTPUT -t nat -p tcp -m tcp --dport 5555 -j REDIRECT --to-ports 49278
-// To delete a rule, use -D rather than -A.
-
 // CheckIPTables ensures that `iptables --list` runs without error.
 func CheckIPTables() error {
 	return execIPTables("--list")
@@ -71,33 +64,88 @@ func iptables(chain string, args ...string) (func() error, error) {
 	return inverse, nil
 }
 
-// ConfigureRedirect forwards ports from `source` to `target` using iptables.
-// Returns an error and a function which undoes the change to the firewall.
-func ConfigureRedirect(source, target int, ipAddress string) (func() error, error) {
-	// This same ruleset is applied to both the PREROUTING and OUTPUT
-	// chains.
-	args := []string{
+func localhostRedirect(source, mappedPort int, ip string) []string {
+	return []string{
 		"--table", "nat",
 		"--protocol", "tcp",
 		// Prevent redirection of packets already going to the container
-		"--match", "tcp", "!", "--destination", ipAddress,
+		"--match", "tcp",
+		"!", "--destination", ip,
 		// Prevent redirection of ports on remote servers
-		// (i.e, don't make google:80 hit our container)
+		// (i.e, don't make google.com:source hit our container)
 		"--match", "addrtype", "--dst-type", "LOCAL",
 		// Traffic destined for our source port.
 		"--destination-port", fmt.Sprint(source),
 		"--jump", "REDIRECT",
-		"--to-ports", fmt.Sprint(target),
+		"--to-ports", fmt.Sprint(mappedPort),
 	}
+}
 
+func remoteTrafficDNAT(source int, ip string, target int) []string {
+	return []string{
+		"--table", "nat",
+		"--protocol", "tcp",
+		"--match", "tcp",
+		// Traffic destined for the source port.
+		"--destination-port", fmt.Sprint(source),
+		"--jump", "DNAT",
+		// Traditional port forward to ip:port.
+		// (This sends inbound traffic there. Outbound traffic can
+		//  return because of an existing MASQUERADE rule put in place
+		//  by docker along the lines of:
+		//   -t nat -A POSTROUTING -s {ip}/32 -d {ip}/32 -p tcp -m tcp
+		//   --dport {target} -j MASQUERADE
+		// )
+		"--to-destination", fmt.Sprintf("%v:%v", ip, target),
+	}
+}
+
+// ConfigureRedirect forwards ports from `source` to `target` using iptables.
+// Returns an error and a function which undoes the change to the firewall.
+//
+// Beware, there are multiple pieces involved.
+//
+// Parameters:
+// * There is the port listened to inside the container (ipAddress:targetPort)
+// * There is the port listened to on the host which docker chooses (mappedPort)
+// * There is the source port, where traffic will go to in order to use our
+//   service (sourcePort)
+//
+// Unfortunately, we cannot easily redirect localhost traffic to
+// ipAddress:TargetPort. This is not supported without changing scary kernel
+// and docker options that I don't want to touch.
+//
+// In this case, docker has the userland proxy, which accepts the connection on
+// localhost and makes an outbound connection to the target.
+//
+// So we simply make an OUTPUT rule which jumps to REDIRECT for the local
+// connections. This redirects localhost->localhost, which is OK, and goes via
+// the userland proxy.
+//
+// For non-local connections in particular we want the receiver to see the
+// correct origin IP address. In order for this to happen we want to do a
+// traditional PREROUTING DNAT port forward from :sourcePort -> ipAddress:targetPort.
+// We also take advantage of the fact docker has a MASQUERADE rule which means
+// that packets leaving our machine back towards the remote machine are stamped
+// with the correct return address (that of the host, not the container).
+func ConfigureRedirect(
+	sourcePort, mappedPort int,
+	ipAddress string, targetPort int,
+) (func() error, error) {
 	// PREROUTING rule applies to traffic coming from off-machine.
-	undoPreroute, err := iptables("PREROUTING", args...)
+	undoPreroute, err := iptables(
+		"PREROUTING",
+		remoteTrafficDNAT(sourcePort, ipAddress, targetPort)...,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	// OUTPUT rule applies to traffic hitting the `localhost` interface.
-	undoOutput, err := iptables("OUTPUT", args...)
+	undoOutput, err := iptables(
+		"OUTPUT",
+		localhostRedirect(sourcePort, mappedPort, ipAddress)...,
+	)
 	if err != nil {
 		return nil, err
 	}
