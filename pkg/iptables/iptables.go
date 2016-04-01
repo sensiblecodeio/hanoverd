@@ -46,7 +46,7 @@ func CheckIPTables() error {
 
 // Invoke one iptables command.
 // Expects "iptables" in the path to be runnable with reasonable permissions.
-func iptables(action Action, chain string, args ...string) *exec.Cmd {
+func iptables(action Action, chain string, args ...string) error {
 	switch action {
 	case INSERT:
 		args = append([]string{"--insert", chain, "1"}, args...)
@@ -56,7 +56,7 @@ func iptables(action Action, chain string, args ...string) *exec.Cmd {
 
 	cmd := exec.Command(IPTablesPath, args...)
 	cmd.Stderr = os.Stderr
-	return cmd
+	return cmd.Run()
 }
 
 // Configure one port redirect from `source` to `target` using iptables.
@@ -75,21 +75,21 @@ func ConfigureRedirect(source, target int, ipAddress string) (func(), error) {
 		"--to-ports", fmt.Sprint(target), "--wait",
 	}
 
-	err := iptables(INSERT, "PREROUTING", args...).Run()
+	err := iptables(INSERT, "PREROUTING", args...)
 	if err != nil {
 		return nil, err
 	}
-	err = iptables(INSERT, "OUTPUT", args...).Run()
+	err = iptables(INSERT, "OUTPUT", args...)
 	if err != nil {
 		return nil, err
 	}
 
 	remove := func() {
-		err := iptables(DELETE, "PREROUTING", args...).Run()
+		err := iptables(DELETE, "PREROUTING", args...)
 		if err != nil {
 			log.Println("Failed to remove iptables rule:", source, target)
 		}
-		err = iptables(DELETE, "OUTPUT", args...).Run()
+		err = iptables(DELETE, "OUTPUT", args...)
 		if err != nil {
 			log.Println("Failed to remove iptables rule:", source, target)
 		}
