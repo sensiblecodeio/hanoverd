@@ -74,6 +74,8 @@ func iptables(chain string, args ...string) (func() error, error) {
 // ConfigureRedirect forwards ports from `source` to `target` using iptables.
 // Returns an error and a function which undoes the change to the firewall.
 func ConfigureRedirect(source, target int, ipAddress string) (func() error, error) {
+	// This same ruleset is applied to both the PREROUTING and OUTPUT
+	// chains.
 	args := []string{
 		"--table", "nat",
 		"--protocol", "tcp",
@@ -88,16 +90,22 @@ func ConfigureRedirect(source, target int, ipAddress string) (func() error, erro
 		"--to-ports", fmt.Sprint(target),
 	}
 
+	// PREROUTING rule applies to traffic coming from off-machine.
 	undoPreroute, err := iptables("PREROUTING", args...)
 	if err != nil {
 		return nil, err
 	}
+
+	// OUTPUT rule applies to traffic hitting the `localhost` interface.
 	undoOutput, err := iptables("OUTPUT", args...)
 	if err != nil {
 		return nil, err
 	}
 
 	remove := func() error {
+		// We must apply all inverses.
+		// But we'll cope with only the first error we encounter
+		// being propagated.
 		err1 := undoPreroute()
 		err2 := undoOutput()
 
