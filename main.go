@@ -473,7 +473,7 @@ func flip(wg *sync.WaitGroup, options Options, container *Container) error {
 				}
 
 				ipAddress := container.container.NetworkSettings.IPAddress
-				remove, err := iptables.ConfigureRedirect(public, mappedPort, ipAddress)
+				remove, err := iptables.ConfigureRedirect(public, mappedPort, ipAddress, internalPort.Int())
 				if err != nil {
 					// Firewall rule didn't get applied.
 					err := fmt.Errorf(
