@@ -46,20 +46,7 @@ func CheckIPTables() error {
 
 // Invoke one iptables command.
 // Expects "iptables" in the path to be runnable with reasonable permissions.
-func iptables(action Action, chain string, source, target int, ipAddress string) *exec.Cmd {
-	args := []string{
-		"--table", "nat",
-		"--protocol", "tcp",
-		// Prevent redirection of packets already going to the container
-		"--match", "tcp", "!", "--destination", ipAddress,
-		// Prevent redirection of ports on remote servers
-		// (i.e, don't make google:80 hit our container)
-		"--match", "addrtype", "--dst-type", "LOCAL",
-		"--dport", fmt.Sprint(source),
-		"--jump", "REDIRECT",
-		"--to-ports", fmt.Sprint(target), "--wait",
-	}
-
+func iptables(action Action, chain string, args ...string) *exec.Cmd {
 	switch action {
 	case INSERT:
 		args = append([]string{"--insert", chain, "1"}, args...)
@@ -75,22 +62,34 @@ func iptables(action Action, chain string, source, target int, ipAddress string)
 // Configure one port redirect from `source` to `target` using iptables.
 // Returns an error and a function which undoes the change to the firewall.
 func ConfigureRedirect(source, target int, ipAddress string) (func(), error) {
+	args := []string{
+		"--table", "nat",
+		"--protocol", "tcp",
+		// Prevent redirection of packets already going to the container
+		"--match", "tcp", "!", "--destination", ipAddress,
+		// Prevent redirection of ports on remote servers
+		// (i.e, don't make google:80 hit our container)
+		"--match", "addrtype", "--dst-type", "LOCAL",
+		"--dport", fmt.Sprint(source),
+		"--jump", "REDIRECT",
+		"--to-ports", fmt.Sprint(target), "--wait",
+	}
 
-	err := iptables(INSERT, "PREROUTING", source, target, ipAddress).Run()
+	err := iptables(INSERT, "PREROUTING", args...).Run()
 	if err != nil {
 		return nil, err
 	}
-	err = iptables(INSERT, "OUTPUT", source, target, ipAddress).Run()
+	err = iptables(INSERT, "OUTPUT", args...).Run()
 	if err != nil {
 		return nil, err
 	}
 
 	remove := func() {
-		err := iptables(DELETE, "PREROUTING", source, target, ipAddress).Run()
+		err := iptables(DELETE, "PREROUTING", args...).Run()
 		if err != nil {
 			log.Println("Failed to remove iptables rule:", source, target)
 		}
-		err = iptables(DELETE, "OUTPUT", source, target, ipAddress).Run()
+		err = iptables(DELETE, "OUTPUT", args...).Run()
 		if err != nil {
 			log.Println("Failed to remove iptables rule:", source, target)
 		}
