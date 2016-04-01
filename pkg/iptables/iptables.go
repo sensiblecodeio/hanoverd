@@ -84,7 +84,8 @@ func ConfigureRedirect(source, target int, ipAddress string) (func() error, erro
 		// Prevent redirection of ports on remote servers
 		// (i.e, don't make google:80 hit our container)
 		"--match", "addrtype", "--dst-type", "LOCAL",
-		"--dport", fmt.Sprint(source),
+		// Traffic destined for our source port.
+		"--destination-port", fmt.Sprint(source),
 		"--jump", "REDIRECT",
 		"--to-ports", fmt.Sprint(target),
 	}
