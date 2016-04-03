@@ -11,7 +11,7 @@ Status: beta. Things may change. We may need your feedback to make it work for y
 ## What is hanoverd good for?
 
 Let's say you have your web application running in docker, and you
-want to upgrade it seemlessly.
+want to upgrade it seamlessly.
 
 You want to move fast and break things with continuous deployment,
 making updates to your app, but you don't want your web application
@@ -24,7 +24,7 @@ request.
 Hanoverd is ideal for stateless web applications running in docker
 where you can easily have multiple instances running side-by-side.
 
-Hanoverd can pull or build images from a variety of sources and
+Hanoverd can pull or build images from a variety of sources, and
 also listen to webhooks from github and elsewhere using an outbound
 TCP connection, rather than having to expose a port for listening to
 such events. This is done via [hookbot](#hookbot).
