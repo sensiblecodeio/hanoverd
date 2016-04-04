@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -44,11 +45,12 @@ func DockerErrorStatus(err error) int {
 type Options struct {
 	env, publish, volumes []string
 
-	containerArgs  []string
-	ports          nat.PortSet
-	portBindings   nat.PortMap
-	statusURI      string
-	disableOverlap bool
+	containerArgs        []string
+	ports                nat.PortSet
+	portBindings         nat.PortMap
+	statusURI            string
+	disableOverlap       bool
+	overlapGraceDuration time.Duration
 }
 
 type UpdateEvent struct {
@@ -108,6 +110,11 @@ func main() {
 			Usage:  "url of hookbot websocket endpoint to monitor for updates",
 			EnvVar: "HOOKBOT_URL",
 		},
+		cli.DurationFlag{
+			Name:  "overlap-grace-duration",
+			Usage: "length of time to wait before killing a superceded container",
+			Value: 1 * time.Second,
+		},
 	}
 
 	app.Action = ActionRun
@@ -146,6 +153,7 @@ func ActionRun(c *cli.Context) {
 	options.env = makeEnv(c.StringSlice("env"))
 	options.statusURI = c.String("status-uri")
 	options.disableOverlap = c.Bool("disable-overlap")
+	options.overlapGraceDuration = c.Duration("overlap-grace-duration")
 
 	containerName := "hanoverd"
 	var imageSource source.ImageSource
@@ -422,7 +430,10 @@ func flipper(
 		}
 
 		if live != nil {
-			live.Closing.Fall()
+			go func(live *Container) {
+				time.Sleep(options.overlapGraceDuration)
+				live.Closing.Fall()
+			}(live)
 		}
 
 		live = container

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -116,60 +117,121 @@ func (c *Container) CopyOutput() error {
 	})
 }
 
-// :todo(drj): May want to return errors for truly broken containers (timeout).
 // Poll for the program inside the container being ready to accept connections
 // Returns `true` for success and `false` for failure.
-func (c *Container) AwaitListening() bool {
+func (c *Container) AwaitListening() error {
 
 	if len(c.container.NetworkSettings.PortMappingAPI()) == 0 {
-		log.Printf("Error! No ports are exposed.")
-		return false
+		return fmt.Errorf("no ports are exposed (specify EXPOSE in Dockerfile)")
 	}
 
 	const (
 		DefaultTimeout = 5 * time.Minute
-		PollFrequency  = 10 // times per second (via integer division of ns)
+		PollFrequency  = 5 // approx. times per second.
 	)
 
-	startDeadline := time.Now().Add(DefaultTimeout)
+	success := make(chan chan struct{})
+	finished := make(chan struct{})
+	defer close(finished)
 
-	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
-		url := fmt.Sprint("http://", port.IP, ":", port.PublicPort, c.StatusURI)
-		for {
-			response, err := http.Get(url)
-			if response != nil && response.Body != nil {
-				response.Body.Close()
-			}
-			if err == nil {
-				switch response.StatusCode {
-				case http.StatusOK:
-					return true
-				case http.StatusNotFound:
-				default:
-					log.Printf("Got non-200 status code: %v, giving up",
-						response.StatusCode)
-					c.Failed.Fall()
-					return false
-				}
-			}
+	// Poll the statusURL once.
+	// Returns true if polling should continue and false otherwise.
+	poll := func(statusURL string) bool {
+		req, err := http.NewRequest("GET", statusURL, nil)
+		if err != nil {
+			log.Printf("Warning, malformed URL: %q: %v", statusURL, err)
+			return false
+		}
+		req.Cancel = finished
 
-			if time.Now().After(startDeadline) {
-				log.Printf("Took longer than %v to start, giving up", DefaultTimeout)
+		resp, err := http.DefaultClient.Do(req)
+		if resp != nil && resp.Body != nil {
+			// Don't care about the body, make sure we close it.
+			resp.Body.Close()
+		}
+
+		if urlErr, ok := err.(*url.Error); ok {
+			errStr := urlErr.Err.Error()
+			if strings.Contains(errStr, "malformed HTTP response") {
+				// Seen in case endpoint doesn't speak HTTP. Give up.
 				return false
-			}
-
-			time.Sleep(time.Second / PollFrequency)
-
-			select {
-			case <-c.Closing.Barrier():
-				// If the container has closed, cease waiting
-				return false
-			default:
 			}
 		}
+
+		if resp == nil {
+			// Keep going, connection probably failed.
+			return true
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			// Protocol: poll() must not return before success
+			// has been acknowledged, otherwise we may hit
+			// noPollersRemain.
+			response := make(chan struct{})
+			select {
+			case success <- response:
+				<-response
+			case <-finished:
+				// Something else caused success/failure,
+				// we'll never be able to communicate success.
+			}
+			return false
+
+		default:
+			log.Printf("Status poller got non-200 status: %q returned %v",
+				statusURL, resp.Status)
+			return false
+		}
+
+		return true
 	}
 
-	return false
+	var pollers sync.WaitGroup
+
+	// Start one poller per exposed port.
+	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
+		statusURL := fmt.Sprint("http://", port.IP, ":", port.PublicPort, c.StatusURI)
+
+		c.wg.Add(1)
+		pollers.Add(1)
+		go func() {
+			defer c.wg.Done()
+			defer pollers.Done()
+
+			// Poll until:
+			// * 200 status code
+			// * malformed response
+			// * teardown
+			for poll(statusURL) {
+				select {
+				case <-finished:
+					return
+				case <-time.After(time.Second / PollFrequency):
+				}
+			}
+		}()
+	}
+
+	noPollersRemain := make(chan struct{})
+	go func() {
+		defer close(noPollersRemain)
+		pollers.Wait()
+	}()
+
+	select {
+	case ack := <-success:
+		ack <- struct{}{}
+		return nil
+
+	case <-noPollersRemain:
+		return fmt.Errorf("no status checks succeeded")
+
+	case <-c.Closing.Barrier():
+		return fmt.Errorf("shutting down")
+
+	case <-time.After(DefaultTimeout):
+		return fmt.Errorf("took longer than %v to start, giving up", DefaultTimeout)
+	}
 }
 
 // Given an internal port, return the port mapped by docker, if there is one.
@@ -287,7 +349,8 @@ func (c *Container) Run(imageSource source.ImageSource, payload []byte) (int, er
 	}()
 
 	go func() {
-		if !c.AwaitListening() {
+		if err := c.AwaitListening(); err != nil {
+			log.Printf("AwaitListening failed: %v", err)
 			c.Failed.Fall()
 			return
 		}
