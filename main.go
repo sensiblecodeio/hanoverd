@@ -443,7 +443,7 @@ func flipper(
 // Make container receive live traffic
 func flip(wg *sync.WaitGroup, options Options, container *Container) error {
 
-	removal := []func(){}
+	removal := []func() error{}
 
 	defer func() {
 		// Block main exit until firewall rule has been removed
@@ -454,7 +454,10 @@ func flip(wg *sync.WaitGroup, options Options, container *Container) error {
 			<-container.Closing.Barrier()
 
 			for _, remove := range removal {
-				remove()
+				err := remove()
+				if err != nil {
+					log.Printf("flip: removal failed: %v", err)
+				}
 			}
 		}()
 	}()
@@ -470,12 +473,12 @@ func flip(wg *sync.WaitGroup, options Options, container *Container) error {
 				}
 
 				ipAddress := container.container.NetworkSettings.IPAddress
-				remove, err := iptables.ConfigureRedirect(public, mappedPort, ipAddress)
+				remove, err := iptables.ConfigureRedirect(public, mappedPort, ipAddress, internalPort.Int())
 				if err != nil {
 					// Firewall rule didn't get applied.
 					err := fmt.Errorf(
-						"Firewall rule application failed: %q (public: %v, private: %v)",
-						err, public, internalPort)
+						"flip: ConfigureRedirect (public: %v, private: %v) failed: %q",
+						public, internalPort, err)
 					container.err(err)
 					return err
 				}
