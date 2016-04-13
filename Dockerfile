@@ -1,4 +1,4 @@
-FROM golang:1.6
+FROM golang:1.6.1
 
 RUN apt-get update && apt-get install -y upx iptables
 
