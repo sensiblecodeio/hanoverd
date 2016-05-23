@@ -140,6 +140,9 @@ Or to pull from a docker registry:
 hanoverd --hookbot wss://TOKEN@hookbot.scraperwiki.com/sub/docker-pull/localhost.localdomain:5000/pdftables.com/tag/master
 ```
 
+Instead of using the `--hookbot` parameter one can also use the
+`HOOKBOT_URL` environment variable.
+
 ## Plans (not a promise, may never happen)
 
 Right now restarts are not-quite-zero-downtime. We haven't seen
