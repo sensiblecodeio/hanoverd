@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -78,12 +79,20 @@ func makeBinds(in []string) []string {
 
 // `docker create` the container.
 func (c *Container) Create(imageName string) error {
+	// Inject internal environment variables
+	imageRepo, imageTagDigest := imageRef(imageName)
+	internalEnv := []string{
+		"HANOVERD_IMAGE=" + imageName,
+		"HANOVERD_IMAGE_REPO=" + imageRepo,
+		"HANOVERD_IMAGE_TAGDIGEST=" + imageTagDigest,
+	}
+
 	opts := docker.CreateContainerOptions{
 		Config: &docker.Config{
 			Hostname:     c.Name,
 			AttachStdout: true,
 			AttachStderr: true,
-			Env:          c.Env,
+			Env:          append(internalEnv, c.Env...),
 			Cmd:          c.Args,
 			Image:        imageName,
 			Volumes:      makeVolumeSet(c.Volumes),
@@ -369,4 +378,24 @@ func (c *Container) Delete() {
 	if err != nil {
 		log.Println("Warn: failed to delete container:", err)
 	}
+}
+
+var imageRefRepoPattern = regexp.MustCompile(`^(.*/.*)[:@](.*)$`)
+var imageRefNamePattern = regexp.MustCompile(`^(.*)[:@](.*)$`)
+
+func imageRef(imageName string) (name string, tagDigest string) {
+	if strings.Count(imageName, "/") >= 1 {
+		parts := imageRefRepoPattern.FindAllStringSubmatch(imageName, -1)
+		if len(parts) == 0 {
+			return imageName, "latest"
+		}
+		return parts[0][1], parts[0][2]
+	}
+
+	parts := imageRefNamePattern.FindAllStringSubmatch(imageName, -1)
+	if len(parts) == 0 {
+		return imageName, "latest"
+	}
+
+	return parts[0][1], parts[0][2]
 }

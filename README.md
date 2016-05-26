@@ -98,11 +98,18 @@ can be set first.
     DOCKER_HOST
     DOCKER_TLS_VERIFY
 
+Additionally, Hanoverd injects internal environment variables that can be used
+by the container:
+
+    HANOVERD_IMAGE
+    HANOVERD_IMAGE_REPO
+    HANOVERD_IMAGE_TAGDIGEST
+
 ## Method
 
 Hanoverd has a few phases. It commences this when it first starts or
 when it is signalled.
- 
+
 * Obtain image (can be done a few ways)
 * Start container with the new image
 * Rapidly poll container with requests until it gives a 200 response
