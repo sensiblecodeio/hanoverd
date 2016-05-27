@@ -1,6 +1,9 @@
 FROM ubuntu:15.10
 
-RUN apt-get install -y netcat-openbsd
+RUN set -x \
+ && apt-get update \
+ && apt-get install -y netcat-openbsd \
+ && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /runtime
 
