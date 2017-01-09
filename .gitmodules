@@ -28,3 +28,6 @@
 [submodule "vendor/github.com/sensiblecodeio/hookbot"]
 	path = vendor/github.com/sensiblecodeio/hookbot
 	url = https://github.com/sensiblecodeio/hookbot
+[submodule "vendor/github.com/docker/go-connections"]
+	path = vendor/github.com/docker/go-connections
+	url = https://github.com/docker/go-connections
