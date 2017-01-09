@@ -11,10 +11,10 @@ import (
 
 	"github.com/codegangsta/cli"
 	"github.com/fsouza/go-dockerclient"
-	"github.com/scraperwiki/hookbot/pkg/listen"
+	"github.com/sensiblecodeio/hookbot/pkg/listen"
 
-	"github.com/scraperwiki/hanoverd/pkg/source"
-	"github.com/scraperwiki/hanoverd/pkg/util"
+	"github.com/sensiblecodeio/hanoverd/pkg/source"
+	"github.com/sensiblecodeio/hanoverd/pkg/util"
 )
 
 // Action is the codegangsta/cli action for running hanoverd in builder mode.

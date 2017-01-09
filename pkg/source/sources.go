@@ -13,7 +13,7 @@ import (
 
 	"github.com/docker/docker/pkg/jsonmessage"
 	docker "github.com/fsouza/go-dockerclient"
-	git "github.com/scraperwiki/git-prep-directory"
+	git "github.com/sensiblecodeio/git-prep-directory"
 )
 
 type ImageSource interface {
@@ -159,7 +159,7 @@ func (s *GitHostSource) Obtain(c *docker.Client, payload []byte) (string, error)
 		return "", err
 	}
 
-	build, err := git.PrepBuildDirectory(gitDir, s.CloneURL(), ref)
+	build, err := git.PrepBuildDirectory(gitDir, s.CloneURL(), ref, 10*time.Minute, os.Stderr)
 	if err != nil {
 		return "", err
 	}

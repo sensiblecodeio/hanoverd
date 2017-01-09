@@ -9,13 +9,13 @@ ENV CGO_ENABLED=0
 
 RUN go install -v -a -installsuffix=static std
 
-COPY ./vendor /go/src/github.com/scraperwiki/hanoverd/vendor/
-COPY ./dependencies /go/src/github.com/scraperwiki/hanoverd/dependencies
+COPY ./vendor /go/src/github.com/sensiblecodeio/hanoverd/vendor/
+COPY ./dependencies /go/src/github.com/sensiblecodeio/hanoverd/dependencies
 
-RUN xargs go install -installsuffix=static -v < /go/src/github.com/scraperwiki/hanoverd/dependencies
+RUN xargs go install -installsuffix=static -v < /go/src/github.com/sensiblecodeio/hanoverd/dependencies
 
-COPY . /go/src/github.com/scraperwiki/hanoverd/
+COPY . /go/src/github.com/sensiblecodeio/hanoverd/
 
 RUN go install -x -v -installsuffix=static \
-		github.com/scraperwiki/hanoverd && \
+		github.com/sensiblecodeio/hanoverd && \
 	upx /go/bin/hanoverd
