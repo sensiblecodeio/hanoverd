@@ -22,12 +22,12 @@ import (
 	"github.com/docker/docker/pkg/nat"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
-	"github.com/scraperwiki/hookbot/pkg/listen"
+	"github.com/sensiblecodeio/hookbot/pkg/listen"
 
-	"github.com/scraperwiki/hanoverd/pkg/builder"
-	"github.com/scraperwiki/hanoverd/pkg/iptables"
-	"github.com/scraperwiki/hanoverd/pkg/source"
-	"github.com/scraperwiki/hanoverd/pkg/util"
+	"github.com/sensiblecodeio/hanoverd/pkg/builder"
+	"github.com/sensiblecodeio/hanoverd/pkg/iptables"
+	"github.com/sensiblecodeio/hanoverd/pkg/source"
+	"github.com/sensiblecodeio/hanoverd/pkg/util"
 )
 
 // DockerErrorStatus returns the HTTP status code represented by `err` or Status
@@ -284,7 +284,7 @@ func MonitorHookbot(target string, notify chan<- *UpdateEvent) {
 		outBound.BuildComplete = done
 		outBound.Payload = payload
 		// outBound.Source.Type = GithubRepository
-		// outBound.Source.githubURL = "github.com/scraperwiki/hookbot"
+		// outBound.Source.githubURL = "github.com/sensiblecodeio/hookbot"
 		// outBound.Source.githubRef = data["SHA"]
 
 		notify <- outBound

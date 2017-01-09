@@ -14,7 +14,7 @@ import (
 	"github.com/fsouza/go-dockerclient"
 	"github.com/pwaller/barrier"
 
-	"github.com/scraperwiki/hanoverd/pkg/source"
+	"github.com/sensiblecodeio/hanoverd/pkg/source"
 )
 
 type Container struct {

@@ -79,7 +79,7 @@ $ ./hanoverd
 
 Supported command line options are the same sort of things as
 docker. However not all are implemented -
-[please submit an issue](https://github.com/scraperwiki/hanoverd/issues/new)
+[please submit an issue](https://github.com/sensiblecodeio/hanoverd/issues/new)
 if there is one you need which is missing.
 
 * `--env`, `-e` for environment, e.g. `--env HOME` to pass `$HOME` through or `--env HOME=/home/foo`
@@ -128,7 +128,7 @@ a tar from S3 would also be doable, for example.
 
 ## Hookbot
 
-[Hookbot](https://github.com/scraperwiki/hookbot) is a service
+[Hookbot](https://github.com/sensiblecodeio/hookbot) is a service
 that allows applications such as hanoverd to listen for webhooks
 by using an *outbound* websocket.
 
@@ -138,7 +138,7 @@ Hanoverd supports a few different URL types, for example to build
 and run a github project on a specific branch whenever the branch changes:
 
 ```
-hanoverd --hookbot wss://TOKEN@hookbot.scraperwiki.com/sub/github.com/repo/scraperwiki/project/branch/master
+hanoverd --hookbot wss://TOKEN@hookbot.scraperwiki.com/sub/github.com/repo/sensiblecodeio/project/branch/master
 ```
 
 Or to pull from a docker registry:
