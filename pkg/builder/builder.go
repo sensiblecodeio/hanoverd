@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/codegangsta/cli"
-	"github.com/fsouza/go-dockerclient"
+	docker "github.com/docker/docker/client"
 	"github.com/sensiblecodeio/hookbot/pkg/listen"
 
 	"github.com/sensiblecodeio/hanoverd/pkg/source"

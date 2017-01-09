@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fsouza/go-dockerclient"
+	docker "github.com/docker/docker/client"
 	"github.com/pwaller/barrier"
 
 	"github.com/sensiblecodeio/hanoverd/pkg/source"

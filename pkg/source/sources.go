@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
+	docker "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
-	docker "github.com/fsouza/go-dockerclient"
 	git "github.com/sensiblecodeio/git-prep-directory"
 )
 
