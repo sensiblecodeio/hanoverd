@@ -27,7 +27,6 @@ import (
 	"github.com/sensiblecodeio/hanoverd/pkg/builder"
 	"github.com/sensiblecodeio/hanoverd/pkg/iptables"
 	"github.com/sensiblecodeio/hanoverd/pkg/source"
-	"github.com/sensiblecodeio/hanoverd/pkg/util"
 )
 
 // DockerErrorStatus returns the HTTP status code represented by `err` or Status
@@ -318,7 +317,7 @@ func loop(
 	options Options,
 	events <-chan *UpdateEvent,
 ) {
-	client, err := util.DockerConnect()
+	client, err := docker.NewEnvClient()
 	if err != nil {
 		dying.Fall()
 		log.Println("Connecting to Docker failed:", err)

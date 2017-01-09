@@ -14,7 +14,6 @@ import (
 	"github.com/sensiblecodeio/hookbot/pkg/listen"
 
 	"github.com/sensiblecodeio/hanoverd/pkg/source"
-	"github.com/sensiblecodeio/hanoverd/pkg/util"
 )
 
 // Action is the codegangsta/cli action for running hanoverd in builder mode.
@@ -35,7 +34,7 @@ func Action(c *cli.Context) {
 	registry, imageName := ParseRegistryImage(repository)
 	log.Printf("Registry: %v, image: %v", registry, imageName)
 
-	client, err := util.DockerConnect()
+	client, err := docker.NewEnvClient()
 	if err != nil {
 		log.Fatalf("Unable to connect to docker: %v", err)
 	}
