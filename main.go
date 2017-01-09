@@ -333,7 +333,7 @@ func loop(
 
 	for event := range events {
 
-		name := fmt.Sprint(containerName, "_", i)
+		name := fmt.Sprint(containerName, "-", i)
 		i++
 
 		log.Printf("New container starting: %q", name)
