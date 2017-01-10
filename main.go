@@ -32,9 +32,7 @@ import (
 // DockerErrorStatus returns the HTTP status code represented by `err` or Status
 // OK if no error or 0 if err != nil and is not a docker error.
 func DockerErrorStatus(err error) int {
-	if err, ok := err.(*docker.Error); ok {
-		return err.Status
-	}
+	log.Printf("DockerErrorStatus: %T", err)
 	if err == nil {
 		return http.StatusOK
 	}
@@ -324,6 +322,8 @@ func loop(
 		return
 	}
 
+	client.UpdateClientVersion("1.24") // support docker 1.12.
+
 	flips := make(chan *Container)
 	go flipper(wg, options, flips)
 
@@ -471,7 +471,7 @@ func flip(wg *sync.WaitGroup, options Options, container *Container) error {
 					public = internalPort.Int()
 				}
 
-				ipAddress := container.container.NetworkSettings.IPAddress
+				ipAddress := container.containerInfo.NetworkSettings.IPAddress
 				remove, err := iptables.ConfigureRedirect(public, mappedPort, ipAddress, internalPort.Int())
 				if err != nil {
 					// Firewall rule didn't get applied.

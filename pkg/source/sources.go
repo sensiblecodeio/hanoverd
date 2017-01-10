@@ -1,6 +1,7 @@
 package source
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,7 +12,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/builder"
+	"github.com/docker/docker/builder/dockerignore"
 	docker "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/jsonmessage"
 	git "github.com/sensiblecodeio/git-prep-directory"
 )
@@ -74,38 +82,22 @@ func DockerPullSourceFromImage(image string) *DockerPullSource {
 	return &DockerPullSource{image, tag}
 }
 
+// Obtain an image by pulling a docker image from somewhere.
 func (s *DockerPullSource) Obtain(c *docker.Client, payload []byte) (string, error) {
+	imageName := fmt.Sprintf("%s:%s", s.Repository, s.Tag)
 
-	opts := docker.PullImageOptions{
-		Repository:    s.Repository,
-		Tag:           s.Tag,
-		RawJSONStream: true,
+	rc, err := c.ImagePull(context.TODO(), imageName, types.ImagePullOptions{})
+	if err != nil {
+		return "", err
 	}
+	defer rc.Close()
 
-	// TODO(pwaller): Send the output somewhere better
-	target := os.Stderr
-
-	outputStream, errorC := PullProgressCopier(target)
-	opts.OutputStream = outputStream
-
-	// TODO(pwaller):
-	// I don't use auth, just a daemon listening only on localhost,
-	// so this remains unimplemented.
-	var auth docker.AuthConfiguration
-	err := c.PullImage(opts, auth)
-
-	outputStream.Close()
-
+	_, err = io.Copy(os.Stderr, rc)
 	if err != nil {
 		return "", err
 	}
 
-	imageName := fmt.Sprintf("%s:%s", s.Repository, s.Tag)
-	return imageName, <-errorC
-
-	// c.PullImage(opts)
-	// return , nil
-	// return "", fmt.Errorf("not implemented: DockerPullSource.Obtain(%v, %v)", s.Repository, s.Tag)
+	return imageName, nil
 }
 
 type GitHostSource struct {
@@ -186,31 +178,34 @@ func (s *GitHostSource) Obtain(c *docker.Client, payload []byte) (string, error)
 	return dockerImage, nil
 }
 
+// constructRuntime builds an image from the standard output of another container.
 func constructRuntime(c *docker.Client, dockerImage string) (string, error) {
 	stdout, err := DockerRun(c, dockerImage)
 	if err != nil {
 		return "", fmt.Errorf("run buildtime image: %v", err)
 	}
 
-	err = c.BuildImage(docker.BuildImageOptions{
-		Name: dockerImage + "-runtime",
-		// OutputStream is an io.Reader, but it gets typecast
-		// to an io.ReadCloser and closes the body inside
-		// net/http's Request type.
-		// stdout is closed inside here.
-		InputStream:  stdout,
-		OutputStream: os.Stderr,
+	imageName := dockerImage + "-runtime"
+
+	resp, err := c.ImageBuild(context.TODO(), stdout, types.ImageBuildOptions{
+		Tags: []string{imageName},
 	})
 	if err != nil {
-		return "", fmt.Errorf("BuildImage -runtime: %v", err)
+		return "", err
 	}
 
-	return dockerImage + "-runtime", nil
+	_, err = io.Copy(os.Stderr, resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return imageName, nil
 }
 
 func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
-	cont, err := c.CreateContainer(docker.CreateContainerOptions{
-		Config: &docker.Config{
+	resp, err := c.ContainerCreate(
+		context.TODO(),
+		&container.Config{
 			Hostname:     "generateruntimecontext",
 			AttachStdout: true,
 			AttachStderr: true,
@@ -220,10 +215,20 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 				"purpose":      "Generate build context for runtime container",
 			},
 		},
-	})
+		&container.HostConfig{},
+		&network.NetworkingConfig{},
+		"",
+	)
 	if err != nil {
 		log.Printf("Create container... failed: %v", err)
 		return nil, err
+	}
+
+	containerID := resp.ID
+	if len(resp.Warnings) > 0 {
+		for _, w := range resp.Warnings {
+			log.Printf("ContainerCreate warning: %v", w)
+		}
 	}
 
 	r, w := io.Pipe()
@@ -233,18 +238,22 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 	go func() {
 		defer close(detached)
 
-		err := c.AttachToContainer(docker.AttachToContainerOptions{
-			Container:    cont.ID,
-			OutputStream: w,
-			ErrorStream:  os.Stderr,
-			Logs:         true,
-			Stdout:       true,
-			Stderr:       true,
-			Stream:       true,
-			Success:      attached,
-		})
-		// io.Pipe hardwired to never return error here.
-		_ = w.CloseWithError(err)
+		cr, err2 := c.ContainerAttach(
+			context.TODO(),
+			containerID,
+			types.ContainerAttachOptions{
+				Logs:   true,
+				Stdout: true,
+				Stderr: true,
+				Stream: true,
+			},
+		)
+		if err2 != nil {
+			_ = w.CloseWithError(err2)
+		}
+
+		_, err2 = io.Copy(w, cr.Reader)
+		_ = w.CloseWithError(err2)
 	}()
 
 	select {
@@ -256,20 +265,19 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 		attached <- struct{}{}
 	}
 
-	err = c.StartContainer(cont.ID, &docker.HostConfig{})
+	err = c.ContainerStart(context.TODO(), containerID, types.ContainerStartOptions{})
 	if err != nil {
 		log.Printf("Start container... failed: %v", err)
 		return nil, err
 	}
 
 	removeContainer := func() {
-		err := c.RemoveContainer(docker.RemoveContainerOptions{
-			ID:            cont.ID,
+		err2 := c.ContainerRemove(context.TODO(), containerID, types.ContainerRemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		})
-		if err != nil {
-			log.Printf("Error removing intermediate container: %v", err)
+		if err2 != nil {
+			log.Printf("Error removing intermediate container: %v", err2)
 		}
 	}
 
@@ -281,11 +289,11 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 		Closer: CloseFunc(func() error {
 			defer removeContainer()
 
-			status, err := c.WaitContainer(cont.ID)
-			if err != nil {
-				return err
+			statusCode, err2 := c.ContainerWait(context.TODO(), containerID)
+			if err2 != nil {
+				return err2
 			}
-			if status != 0 {
+			if statusCode != 0 {
 				return fmt.Errorf("non-zero exit status: %v", err)
 			}
 			return nil
@@ -322,11 +330,75 @@ func HaveSSHKey() bool {
 }
 
 func DockerBuildDirectory(c *docker.Client, name, path string) error {
-	return c.BuildImage(docker.BuildImageOptions{
-		Name:         name,
-		ContextDir:   path,
-		OutputStream: os.Stderr,
+	buildCtx, err := contextFromDir(path)
+	if err != nil {
+		return err
+	}
+	resp, err := c.ImageBuild(
+		context.TODO(),
+		buildCtx,
+		types.ImageBuildOptions{
+			Tags: []string{name},
+		},
+	)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(os.Stderr, resp.Body)
+	return err
+}
+
+// contextFromDir taken verbatim from docker/build to match logic.
+func contextFromDir(contextDir string) (io.ReadCloser, error) {
+	relDockerfile := "Dockerfile"
+	// And canonicalize dockerfile name to a platform-independent one
+	relDockerfile, err := archive.CanonicalTarNameForPath(relDockerfile)
+	if err != nil {
+		return nil, fmt.Errorf("cannot canonicalize dockerfile path %s: %v", relDockerfile, err)
+	}
+
+	f, err := os.Open(filepath.Join(contextDir, ".dockerignore"))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	defer f.Close()
+
+	var excludes []string
+	if err == nil {
+		excludes, err = dockerignore.ReadAll(f)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err := builder.ValidateContextDirectory(contextDir, excludes); err != nil {
+		return nil, fmt.Errorf("Error checking context: '%s'.", err)
+	}
+
+	// If .dockerignore mentions .dockerignore or the Dockerfile
+	// then make sure we send both files over to the daemon
+	// because Dockerfile is, obviously, needed no matter what, and
+	// .dockerignore is needed to know if either one needs to be
+	// removed. The daemon will remove them for us, if needed, after it
+	// parses the Dockerfile. Ignore errors here, as they will have been
+	// caught by validateContextDirectory above.
+	var includes = []string{"."}
+	keepThem1, _ := fileutils.Matches(".dockerignore", excludes)
+	keepThem2, _ := fileutils.Matches(relDockerfile, excludes)
+	if keepThem1 || keepThem2 {
+		includes = append(includes, ".dockerignore", relDockerfile)
+	}
+
+	compression := archive.Uncompressed // likely on localhost.
+	buildCtx, err := archive.TarWithOptions(contextDir, &archive.TarOptions{
+		Compression:     compression,
+		ExcludePatterns: excludes,
+		IncludeFiles:    includes,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return buildCtx, nil
 }
 
 func PullProgressCopier(target io.Writer) (io.WriteCloser, <-chan error) {
