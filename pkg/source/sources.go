@@ -92,7 +92,8 @@ func (s *DockerPullSource) Obtain(c *docker.Client, payload []byte) (string, err
 	}
 	defer rc.Close()
 
-	_, err = io.Copy(os.Stderr, rc)
+	err = jsonmessage.DisplayJSONMessagesStream(rc, os.Stderr, 0, false, nil)
+	// _, err = io.Copy(os.Stderr, rc)
 	if err != nil {
 		return "", err
 	}
@@ -344,7 +345,8 @@ func DockerBuildDirectory(c *docker.Client, name, path string) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(os.Stderr, resp.Body)
+
+	err = jsonmessage.DisplayJSONMessagesStream(resp.Body, os.Stderr, 0, false, nil)
 	return err
 }
 

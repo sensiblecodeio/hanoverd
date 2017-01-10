@@ -3,7 +3,6 @@ package builder
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -14,6 +13,7 @@ import (
 	"github.com/codegangsta/cli"
 	"github.com/docker/docker/api/types"
 	docker "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/sensiblecodeio/hookbot/pkg/listen"
 
 	"github.com/sensiblecodeio/hanoverd/pkg/source"
@@ -81,7 +81,7 @@ func Action(c *cli.Context) {
 		}
 		defer rc.Close()
 
-		_, err2 = io.Copy(os.Stderr, rc)
+		err2 = jsonmessage.DisplayJSONMessagesStream(rc, os.Stderr, 0, false, nil)
 		if err2 != nil {
 			return err2
 		}
