@@ -19,7 +19,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/codegangsta/cli"
-	docker "github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/pwaller/barrier"
 	"github.com/sensiblecodeio/hookbot/pkg/listen"
@@ -27,6 +26,7 @@ import (
 	"github.com/sensiblecodeio/hanoverd/pkg/builder"
 	"github.com/sensiblecodeio/hanoverd/pkg/iptables"
 	"github.com/sensiblecodeio/hanoverd/pkg/source"
+	"github.com/sensiblecodeio/hanoverd/pkg/util"
 )
 
 // DockerErrorStatus returns the HTTP status code represented by `err` or Status
@@ -315,14 +315,12 @@ func loop(
 	options Options,
 	events <-chan *UpdateEvent,
 ) {
-	client, err := docker.NewEnvClient()
+	client, err := util.DockerClient()
 	if err != nil {
 		dying.Fall()
 		log.Println("Connecting to Docker failed:", err)
 		return
 	}
-
-	client.UpdateClientVersion("1.24") // support docker 1.12.
 
 	flips := make(chan *Container)
 	go flipper(wg, options, flips)
