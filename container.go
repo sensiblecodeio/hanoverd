@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,7 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fsouza/go-dockerclient"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
+	docker "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/pwaller/barrier"
 
 	"github.com/sensiblecodeio/hanoverd/pkg/source"
@@ -24,8 +29,9 @@ type Container struct {
 	Volumes   []string
 	StatusURI string
 
-	client    *docker.Client
-	container *docker.Container
+	client        *docker.Client
+	containerID   string
+	containerInfo types.ContainerJSON
 
 	Failed, Superceded, Obtained, Ready, Closing barrier.Barrier
 
@@ -87,8 +93,9 @@ func (c *Container) Create(imageName string) error {
 		"HANOVERD_IMAGE_TAGDIGEST=" + imageTagDigest,
 	}
 
-	opts := docker.CreateContainerOptions{
-		Config: &docker.Config{
+	resp, err := c.client.ContainerCreate(
+		context.TODO(),
+		&container.Config{
 			Hostname:     c.Name,
 			AttachStdout: true,
 			AttachStderr: true,
@@ -101,10 +108,17 @@ func (c *Container) Create(imageName string) error {
 				"hanoverd-name": c.Name,
 			},
 		},
-	}
+		&container.HostConfig{
+			PublishAllPorts: true,
+			Binds:           makeBinds(c.Volumes),
+			AutoRemove:      true,
+		},
+		&network.NetworkingConfig{},
+		"",
+	)
 
-	var err error
-	c.container, err = c.client.CreateContainer(opts)
+	c.containerID = resp.ID
+
 	return err
 }
 
@@ -112,25 +126,34 @@ func (c *Container) Create(imageName string) error {
 // completion
 func (c *Container) CopyOutput() error {
 
-	// TODO(pwaller): at some point move this on to 'c' for configurability?
+	body, err := c.client.ContainerAttach(
+		context.TODO(),
+		c.containerID,
+		types.ContainerAttachOptions{
+			Stdout: true,
+			Stderr: true,
+			Logs:   true, // Capture messages from process start.
+			Stream: true, // Attach to receive messages thereafter.
+		},
+	)
+	if err != nil {
+		return err
+	}
+	defer body.Close()
+
 	w := os.Stderr
-	// Blocks until stream closed
-	return c.client.AttachToContainer(docker.AttachToContainerOptions{
-		Container:    c.container.ID,
-		OutputStream: w,
-		ErrorStream:  w,
-		Logs:         true,
-		Stdout:       true,
-		Stderr:       true,
-		Stream:       true,
-	})
+	// Note: buffered reads, but buffered reads are not as block-y as buffered
+	//       writes so it's OK, it just makes it more efficient.
+	_, err = stdcopy.StdCopy(w, w, body.Reader)
+	return err
 }
 
-// Poll for the program inside the container being ready to accept connections
+// AwaitListening polls for the program inside the container being ready to accept
+// connections.
 // Returns `true` for success and `false` for failure.
 func (c *Container) AwaitListening() error {
 
-	if len(c.container.NetworkSettings.PortMappingAPI()) == 0 {
+	if len(c.containerInfo.NetworkSettings.Ports) == 0 {
 		return fmt.Errorf("no ports are exposed (specify EXPOSE in Dockerfile)")
 	}
 
@@ -198,8 +221,9 @@ func (c *Container) AwaitListening() error {
 	var pollers sync.WaitGroup
 
 	// Start one poller per exposed port.
-	for _, port := range c.container.NetworkSettings.PortMappingAPI() {
-		statusURL := fmt.Sprint("http://", port.IP, ":", port.PublicPort, c.StatusURI)
+	for _, portMaps := range c.containerInfo.NetworkSettings.Ports {
+		port := portMaps[0] // take the first public port
+		statusURL := fmt.Sprint("http://", port.HostIP, ":", port.HostPort, c.StatusURI)
 
 		c.wg.Add(1)
 		pollers.Add(1)
@@ -245,9 +269,17 @@ func (c *Container) AwaitListening() error {
 
 // Given an internal port, return the port mapped by docker, if there is one.
 func (c *Container) MappedPort(internal int) (int, bool) {
-	for _, m := range c.container.NetworkSettings.PortMappingAPI() {
-		if int(m.PrivatePort) == internal {
-			return int(m.PublicPort), true
+	for privatePort, mappedPorts := range c.containerInfo.NetworkSettings.Ports {
+		if privatePort.Int() == internal {
+			for _, port := range mappedPorts {
+				var portInt int
+				_, err := fmt.Sscan(port.HostPort, &portInt)
+				if err != nil {
+					log.Printf("Failed to parse port %q", port.HostPort)
+				} else {
+					return portInt, true
+				}
+			}
 		}
 	}
 	return -1, false
@@ -255,17 +287,16 @@ func (c *Container) MappedPort(internal int) (int, bool) {
 
 // Start the container (and notify it if c.Closing falls)
 func (c *Container) Start() error {
-	hc := &docker.HostConfig{
-		PublishAllPorts: true,
-		Binds:           makeBinds(c.Volumes),
-	}
-	err := c.client.StartContainer(c.container.ID, hc)
+
+	ctx := context.TODO()
+
+	err := c.client.ContainerStart(ctx, c.containerID, types.ContainerStartOptions{})
 	if err != nil {
 		return err
 	}
 
 	// Load container.NetworkSettings
-	c.container, err = c.client.InspectContainer(c.container.ID)
+	c.containerInfo, err = c.client.ContainerInspect(ctx, c.containerID)
 	if err != nil {
 		return err
 	}
@@ -278,26 +309,23 @@ func (c *Container) Start() error {
 
 		<-c.Closing.Barrier()
 		// If the container is signaled to close, send a kill signal
-		err := c.client.KillContainer(docker.KillContainerOptions{
-			ID: c.container.ID,
-		})
+		err := c.client.ContainerKill(ctx, c.containerID, "")
 		if err == nil {
 			return
 		}
 		switch err := err.(type) {
-		case *docker.NoSuchContainer:
-			// The container already went away, who cares.
-			return
 		default:
-			log.Println("Killing container failed:", c.container.ID, err)
+			t := fmt.Sprintf("%T", err)
+			log.Println("Killing container failed:", c.containerID, t, err)
 		}
 	}()
 	return nil
 }
 
 // Wait until container exits
-func (c *Container) Wait() (int, error) {
-	return c.client.WaitContainer(c.container.ID)
+func (c *Container) Wait() (int64, error) {
+	statusCode, err := c.client.ContainerWait(context.TODO(), c.containerID)
+	return statusCode, err
 }
 
 // Internal function for raising an error.
@@ -308,7 +336,7 @@ func (c *Container) err(err error) {
 
 // Manage the whole lifecycle of the container in response to a request to
 // start it.
-func (c *Container) Run(imageSource source.ImageSource, payload []byte) (int, error) {
+func (c *Container) Run(imageSource source.ImageSource, payload []byte) (int64, error) {
 
 	defer c.Closing.Fall()
 	defer close(c.errorsW)
@@ -370,8 +398,7 @@ func (c *Container) Run(imageSource source.ImageSource, payload []byte) (int, er
 }
 
 func (c *Container) Delete() {
-	err := c.client.RemoveContainer(docker.RemoveContainerOptions{
-		ID:            c.container.ID,
+	err := c.client.ContainerRemove(context.TODO(), c.containerID, types.ContainerRemoveOptions{
 		RemoveVolumes: true,
 		Force:         true,
 	})

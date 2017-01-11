@@ -19,8 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/codegangsta/cli"
-	"github.com/docker/docker/pkg/nat"
-	"github.com/fsouza/go-dockerclient"
+	"github.com/docker/go-connections/nat"
 	"github.com/pwaller/barrier"
 	"github.com/sensiblecodeio/hookbot/pkg/listen"
 
@@ -33,9 +32,7 @@ import (
 // DockerErrorStatus returns the HTTP status code represented by `err` or Status
 // OK if no error or 0 if err != nil and is not a docker error.
 func DockerErrorStatus(err error) int {
-	if err, ok := err.(*docker.Error); ok {
-		return err.Status
-	}
+	log.Printf("DockerErrorStatus: %T", err)
 	if err == nil {
 		return http.StatusOK
 	}
@@ -318,7 +315,7 @@ func loop(
 	options Options,
 	events <-chan *UpdateEvent,
 ) {
-	client, err := util.DockerConnect()
+	client, err := util.DockerClient()
 	if err != nil {
 		dying.Fall()
 		log.Println("Connecting to Docker failed:", err)
@@ -472,7 +469,7 @@ func flip(wg *sync.WaitGroup, options Options, container *Container) error {
 					public = internalPort.Int()
 				}
 
-				ipAddress := container.container.NetworkSettings.IPAddress
+				ipAddress := container.containerInfo.NetworkSettings.IPAddress
 				remove, err := iptables.ConfigureRedirect(public, mappedPort, ipAddress, internalPort.Int())
 				if err != nil {
 					// Firewall rule didn't get applied.

@@ -1,6 +1,4 @@
-FROM golang:1.6.1
-
-RUN apt-get update && apt-get install -y upx iptables
+FROM golang:1.8beta2-alpine
 
 COPY ./github-host-key /etc/ssh/ssh_known_hosts
 
@@ -17,5 +15,4 @@ RUN xargs go install -installsuffix=static -v < /go/src/github.com/sensiblecodei
 COPY . /go/src/github.com/sensiblecodeio/hanoverd/
 
 RUN go install -x -v -installsuffix=static \
-		github.com/sensiblecodeio/hanoverd && \
-	upx /go/bin/hanoverd
+		github.com/sensiblecodeio/hanoverd

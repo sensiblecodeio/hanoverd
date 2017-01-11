@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,7 +11,8 @@ import (
 	"strings"
 
 	"github.com/codegangsta/cli"
-	"github.com/fsouza/go-dockerclient"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/sensiblecodeio/hookbot/pkg/listen"
 
 	"github.com/sensiblecodeio/hanoverd/pkg/source"
@@ -29,13 +31,16 @@ func Action(c *cli.Context) {
 		log.Fatalf("Failed to parse hookbot notify URL: %v", err)
 	}
 
-	tagOpts := docker.TagImageOptions{Repo: repository, Tag: tag}
-	tagOpts.Force = true
+	ref := repository
+	if tag == "" {
+		tag = "latest"
+	}
+	ref += ":" + tag
 
 	registry, imageName := ParseRegistryImage(repository)
 	log.Printf("Registry: %v, image: %v", registry, imageName)
 
-	client, err := util.DockerConnect()
+	client, err := util.DockerClient()
 	if err != nil {
 		log.Fatalf("Unable to connect to docker: %v", err)
 	}
@@ -59,34 +64,32 @@ func Action(c *cli.Context) {
 	}()
 
 	build := func() error {
-		name, err := imageSource.Obtain(client, []byte{})
-		if err != nil {
-			return fmt.Errorf("obtain: %v", err)
+		name, err2 := imageSource.Obtain(client, []byte{})
+		if err2 != nil {
+			return fmt.Errorf("obtain: %v", err2)
 		}
 
 		log.Printf("Tag image...")
-		err = client.TagImage(name, tagOpts)
-		if err != nil {
-			return fmt.Errorf("tagimage: %v", err)
+		err2 = client.ImageTag(context.TODO(), name, ref)
+		if err2 != nil {
+			return fmt.Errorf("tagimage: %v", err2)
 		}
 
-		opts := docker.PushImageOptions{
-			// Registry:     registry,
-			Name:         repository,
-			Tag:          tagOpts.Tag,
-			OutputStream: os.Stderr,
+		rc, err2 := client.ImagePush(context.TODO(), ref, types.ImagePushOptions{})
+		if err2 != nil {
+			return fmt.Errorf("pushimage: %v", err2)
 		}
+		defer rc.Close()
 
-		log.Printf("Push image...")
-		err = client.PushImage(opts, docker.AuthConfiguration{})
-		if err != nil {
-			return fmt.Errorf("pushimage: %v", err)
+		err2 = jsonmessage.DisplayJSONMessagesStream(rc, os.Stderr, 0, false, nil)
+		if err2 != nil {
+			return err2
 		}
 
 		log.Printf("Notify docker endpoint...")
-		resp, err := http.Post(c.String("docker-notify"), "text/plain", strings.NewReader("UPDATE\n"))
-		if err != nil {
-			return fmt.Errorf("notify hookbot of push: %v", err)
+		resp, err2 := http.Post(c.String("docker-notify"), "text/plain", strings.NewReader("UPDATE\n"))
+		if err2 != nil {
+			return fmt.Errorf("notify hookbot of push: %v", err2)
 		}
 		log.Printf("Response from notify: %v", resp.StatusCode)
 		return nil

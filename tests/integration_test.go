@@ -68,12 +68,12 @@ func TestCWDBuildsAdvance(t *testing.T) {
 	// to see next?
 
 	current := ""
-	wanted := "Hello from hanoverd_0\r\n"
+	wanted := "Hello from hanoverd-0\r\n"
 	next := map[string]string{
-		"Hello from hanoverd_0\r\n": "Hello from hanoverd_1\r\n",
-		"Hello from hanoverd_1\r\n": "Hello from hanoverd_2\r\n",
+		"Hello from hanoverd-0\r\n": "Hello from hanoverd-1\r\n",
+		"Hello from hanoverd-1\r\n": "Hello from hanoverd-2\r\n",
 		// When 2 is reached,
-		"Hello from hanoverd_2\r\n": "",
+		"Hello from hanoverd-2\r\n": "",
 	}
 
 	finished := make(chan struct{})
@@ -111,7 +111,7 @@ loop:
 
 			// Default: tell hanoverd to reload
 			sig := syscall.SIGHUP
-			if response == "Hello from hanoverd_2\r\n" {
+			if response == "Hello from hanoverd-2\r\n" {
 				// Final: send SIGTERM
 				sig = syscall.SIGTERM
 			}
