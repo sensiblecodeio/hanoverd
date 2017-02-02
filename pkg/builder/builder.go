@@ -2,6 +2,7 @@ package builder
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -75,7 +76,11 @@ func Action(c *cli.Context) {
 			return fmt.Errorf("tagimage: %v", err2)
 		}
 
-		rc, err2 := client.ImagePush(context.TODO(), ref, types.ImagePushOptions{})
+		blankAuth := base64.URLEncoding.EncodeToString([]byte("{}"))
+
+		rc, err2 := client.ImagePush(context.TODO(), ref, types.ImagePushOptions{
+			RegistryAuth: blankAuth,
+		})
 		if err2 != nil {
 			return fmt.Errorf("pushimage: %v", err2)
 		}
