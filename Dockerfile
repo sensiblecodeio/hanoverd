@@ -1,4 +1,4 @@
-FROM golang:1.10-alpine
+FROM golang:1.10.3-alpine
 
 COPY ./github-host-key /etc/ssh/ssh_known_hosts
 
