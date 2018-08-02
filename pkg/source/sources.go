@@ -406,6 +406,8 @@ func contextFromDir(contextDir string) (io.ReadCloser, error) {
 }
 
 // Copied verbatim from docker/cli/command/image/build.
+// Licensed under apache 2 license available from.
+// https://github.com/docker/cli/blob/master/LICENSE
 //
 // validateContextDirectory checks if all the contents of the directory
 // can be read and returns an error if some files can't be read
