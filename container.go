@@ -14,6 +14,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	docker "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -27,6 +28,7 @@ type Container struct {
 	ImageName string
 	Args, Env []string
 	Volumes   []string
+	Mounts    []mount.Mount
 	StatusURI string
 
 	client        *docker.Client
@@ -112,6 +114,7 @@ func (c *Container) Create(imageName string) error {
 			PublishAllPorts: true,
 			Binds:           makeBinds(c.Volumes),
 			AutoRemove:      true,
+			Mounts:          c.Mounts,
 		},
 		&network.NetworkingConfig{},
 		"",

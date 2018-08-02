@@ -28,3 +28,6 @@
 [submodule "vendor/github.com/docker/go-connections"]
 	path = vendor/github.com/docker/go-connections
 	url = https://github.com/docker/go-connections
+[submodule "vendor/github.com/docker/go-units"]
+	path = vendor/github.com/docker/go-units
+	url = https://github.com/docker/go-units

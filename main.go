@@ -25,6 +25,7 @@ import (
 
 	"github.com/sensiblecodeio/hanoverd/pkg/builder"
 	"github.com/sensiblecodeio/hanoverd/pkg/iptables"
+	"github.com/sensiblecodeio/hanoverd/pkg/opts"
 	"github.com/sensiblecodeio/hanoverd/pkg/source"
 	"github.com/sensiblecodeio/hanoverd/pkg/util"
 )
@@ -40,7 +41,7 @@ func DockerErrorStatus(err error) int {
 }
 
 type Options struct {
-	env, publish, volumes []string
+	env, publish, volumes, mounts []string
 
 	containerArgs        []string
 	ports                nat.PortSet
@@ -97,6 +98,11 @@ func main() {
 			Usage: "Bind mount a volume",
 			Value: &cli.StringSlice{},
 		},
+		cli.StringSliceFlag{
+			Name:  "mount, m",
+			Usage: "Supply mounts",
+			Value: &cli.StringSlice{},
+		},
 		cli.StringFlag{
 			Name:  "status-uri",
 			Usage: "specify URI which returns 200 OK when functioning correctly",
@@ -147,6 +153,7 @@ func ActionRun(c *cli.Context) {
 
 	options := Options{}
 	options.volumes = c.StringSlice("volume")
+	options.mounts = c.StringSlice("mount")
 	options.env = makeEnv(c.StringSlice("env"))
 	options.statusURI = c.String("status-uri")
 	options.disableOverlap = c.Bool("disable-overlap")
@@ -343,6 +350,11 @@ func loop(
 		c.Args = options.containerArgs
 		c.Env = options.env
 		c.Volumes = options.volumes
+		var mountOpts opts.MountOpt
+		for _, mount := range options.mounts {
+			mountOpts.Set(mount) // note: set is really 'append'.
+		}
+		c.Mounts = mountOpts.Value()
 		c.StatusURI = options.statusURI
 
 		c.Obtained.Forward(&event.Obtained)

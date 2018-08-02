@@ -52,6 +52,7 @@ github.com/sensiblecodeio/hanoverd/vendor/github.com/docker/docker/vendor/golang
 github.com/sensiblecodeio/hanoverd/vendor/github.com/docker/docker/vendor/golang.org/x/net/proxy
 github.com/sensiblecodeio/hanoverd/vendor/github.com/docker/docker/vendor/golang.org/x/sys/unix
 github.com/sensiblecodeio/hanoverd/vendor/github.com/docker/go-connections/nat
+github.com/sensiblecodeio/hanoverd/vendor/github.com/docker/go-units
 github.com/sensiblecodeio/hanoverd/vendor/github.com/gorilla/websocket
 github.com/sensiblecodeio/hanoverd/vendor/github.com/pwaller/barrier
 github.com/sensiblecodeio/hanoverd/vendor/github.com/sensiblecodeio/git-prep-directory
