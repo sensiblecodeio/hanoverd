@@ -9,13 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/builder"
 	"github.com/docker/docker/builder/dockerignore"
 	docker "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
@@ -93,7 +91,6 @@ func (s *DockerPullSource) Obtain(c *docker.Client, payload []byte) (string, err
 	defer rc.Close()
 
 	err = jsonmessage.DisplayJSONMessagesStream(rc, os.Stderr, 0, false, nil)
-	// _, err = io.Copy(os.Stderr, rc)
 	if err != nil {
 		return "", err
 	}
@@ -290,14 +287,20 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 		Closer: CloseFunc(func() error {
 			defer removeContainer()
 
-			statusCode, err2 := c.ContainerWait(context.TODO(), containerID)
-			if err2 != nil {
+			waitBodyC, err2C := c.ContainerWait(context.TODO(), containerID, container.WaitConditionNotRunning)
+			select {
+			case err2 := <-err2C:
 				return err2
+
+			case waitBody := <-waitBodyC:
+				if waitBody.Error != nil && waitBody.Error.Message != "" {
+					return fmt.Errorf("containerWait: %v", waitBody.Error.Message)
+				}
+				if waitBody.StatusCode != 0 {
+					return fmt.Errorf("non-zero exit status: %v", waitBody.StatusCode)
+				}
+				return nil
 			}
-			if statusCode != 0 {
-				return fmt.Errorf("non-zero exit status: %v", err)
-			}
-			return nil
 		}),
 	}, err
 }
@@ -354,10 +357,7 @@ func DockerBuildDirectory(c *docker.Client, name, path string) error {
 func contextFromDir(contextDir string) (io.ReadCloser, error) {
 	relDockerfile := "Dockerfile"
 	// And canonicalize dockerfile name to a platform-independent one
-	relDockerfile, err := archive.CanonicalTarNameForPath(relDockerfile)
-	if err != nil {
-		return nil, fmt.Errorf("cannot canonicalize dockerfile path %s: %v", relDockerfile, err)
-	}
+	relDockerfile = archive.CanonicalTarNameForPath(relDockerfile)
 
 	f, err := os.Open(filepath.Join(contextDir, ".dockerignore"))
 	if err != nil && !os.IsNotExist(err) {
@@ -373,7 +373,7 @@ func contextFromDir(contextDir string) (io.ReadCloser, error) {
 		}
 	}
 
-	if err := builder.ValidateContextDirectory(contextDir, excludes); err != nil {
+	if err := validateContextDirectory(contextDir, excludes); err != nil {
 		return nil, fmt.Errorf("Error checking context: '%s'.", err)
 	}
 
@@ -403,76 +403,56 @@ func contextFromDir(contextDir string) (io.ReadCloser, error) {
 	return buildCtx, nil
 }
 
-func PullProgressCopier(target io.Writer) (io.WriteCloser, <-chan error) {
-	reader, wrappedWriter := io.Pipe()
-	errorC := make(chan error)
-	go func() {
-		finish := make(chan struct{})
-		defer close(finish)
-		defer close(errorC)
-
-		mu := sync.Mutex{}
-		lastMessage := jsonmessage.JSONMessage{}
-		newMessage := false
-
-		printMessage := func(m *jsonmessage.JSONMessage) {
-			if m.ProgressMessage != "" {
-				fmt.Fprintln(target, m.ID[:8], m.Status, m.ProgressMessage)
-			} else if m.Progress != nil {
-				fmt.Fprintln(target, m.ID[:8], m.Status, m.Progress.String())
-			} else {
-				m.Display(target, false)
+// Copied verbatim from docker/cli/command/image/build.
+//
+// validateContextDirectory checks if all the contents of the directory
+// can be read and returns an error if some files can't be read
+// symlinks which point to non-existing files don't trigger an error
+func validateContextDirectory(srcPath string, excludes []string) error {
+	contextRoot, err := getContextRoot(srcPath)
+	if err != nil {
+		return err
+	}
+	return filepath.Walk(contextRoot, func(filePath string, f os.FileInfo, err error) error {
+		if err != nil {
+			if os.IsPermission(err) {
+				return fmt.Errorf("can't stat '%s'", filePath)
 			}
+			if os.IsNotExist(err) {
+				return fmt.Errorf("file ('%s') not found or excluded by .dockerignore", filePath)
+			}
+			return err
 		}
 
-		go func() {
-			tick := time.Tick(1 * time.Second)
-			for {
-				select {
-				case <-tick:
-					mu.Lock()
-					if newMessage {
-						printMessage(&lastMessage)
-						newMessage = false
-					}
-					mu.Unlock()
-
-				case <-finish:
-					return
-				}
+		// skip this directory/file if it's not in the path, it won't get added to the context
+		if relFilePath, err := filepath.Rel(contextRoot, filePath); err != nil {
+			return err
+		} else if skip, err := fileutils.Matches(relFilePath, excludes); err != nil {
+			return err
+		} else if skip {
+			if f.IsDir() {
+				return filepath.SkipDir
 			}
-		}()
-
-		dec := json.NewDecoder(reader)
-		for {
-			tmp := jsonmessage.JSONMessage{}
-			err := dec.Decode(&tmp)
-
-			mu.Lock()
-			if tmp.Error != nil || tmp.ErrorMessage != "" {
-				tmp.Display(target, false)
-				if tmp.Error != nil {
-					errorC <- tmp.Error
-				} else {
-					errorC <- fmt.Errorf("%s", tmp.ErrorMessage)
-				}
-				return
-			} else if tmp.Status != "Downloading" && tmp.Status != "Extracting" {
-				printMessage(&tmp)
-			} else {
-				newMessage = true
-				lastMessage = tmp
-			}
-			mu.Unlock()
-
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				log.Print("decode failure in", err)
-				return
-			}
+			return nil
 		}
-	}()
-	return wrappedWriter, errorC
+
+		// skip checking if symlinks point to non-existing files, such symlinks can be useful
+		// also skip named pipes, because they hanging on open
+		if f.Mode()&(os.ModeSymlink|os.ModeNamedPipe) != 0 {
+			return nil
+		}
+
+		if !f.IsDir() {
+			currentFile, err := os.Open(filePath)
+			if err != nil && os.IsPermission(err) {
+				return fmt.Errorf("no permission to read from '%s'", filePath)
+			}
+			currentFile.Close()
+		}
+		return nil
+	})
+}
+
+func getContextRoot(srcPath string) (string, error) {
+	return filepath.Join(srcPath, "."), nil
 }

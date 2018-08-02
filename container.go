@@ -324,8 +324,17 @@ func (c *Container) Start() error {
 
 // Wait until container exits
 func (c *Container) Wait() (int64, error) {
-	statusCode, err := c.client.ContainerWait(context.TODO(), c.containerID)
-	return statusCode, err
+	waitBodyC, errC := c.client.ContainerWait(context.TODO(), c.containerID, container.WaitConditionNextExit)
+	select {
+	case err := <-errC:
+		return -1, err
+
+	case waitBody := <-waitBodyC:
+		if waitBody.Error != nil && waitBody.Error.Message != "" {
+			return -1, fmt.Errorf("containerWait: %v", waitBody.Error.Message)
+		}
+		return waitBody.StatusCode, nil
+	}
 }
 
 // Internal function for raising an error.
