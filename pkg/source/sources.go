@@ -186,7 +186,8 @@ func constructRuntime(c *docker.Client, dockerImage string) (string, error) {
 	imageName := dockerImage + "-runtime"
 
 	resp, err := c.ImageBuild(context.TODO(), stdout, types.ImageBuildOptions{
-		Tags: []string{imageName},
+		Remove: true,
+		Tags:   []string{imageName},
 	})
 	if err != nil {
 		return "", err
@@ -342,7 +343,8 @@ func DockerBuildDirectory(c *docker.Client, name, path string) error {
 		context.TODO(),
 		buildCtx,
 		types.ImageBuildOptions{
-			Tags: []string{name},
+			Remove: true,
+			Tags:   []string{name},
 		},
 	)
 	if err != nil {
