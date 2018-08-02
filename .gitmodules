@@ -4,9 +4,6 @@
 [submodule "vendor/github.com/docker/docker"]
 	path = vendor/github.com/docker/docker
 	url = https://github.com/docker/docker
-[submodule "vendor/github.com/fsouza/go-dockerclient"]
-	path = vendor/github.com/fsouza/go-dockerclient
-	url = https://github.com/fsouza/go-dockerclient
 [submodule "vendor/github.com/pwaller/barrier"]
 	path = vendor/github.com/pwaller/barrier
 	url = https://github.com/pwaller/barrier
