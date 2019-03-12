@@ -374,10 +374,10 @@ func (c *Container) Run(imageSource source.ImageSource, payload []byte) (int64, 
 		c.Failed.Fall()
 		return -1, err
 	}
-	defer c.Delete()
 
 	err = c.Start()
 	if err != nil {
+		c.Delete() // Only attempt to delete if start fails, otherwise handled by AutoRemove.
 		c.Failed.Fall()
 		return -1, err
 	}
