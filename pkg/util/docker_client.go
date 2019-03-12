@@ -7,7 +7,7 @@ import (
 // DockerClient configures a docker client.
 func DockerClient() (*client.Client, error) {
 	return client.NewClientWithOpts(
-		client.WithVersion("1.37"),
+		client.WithVersion("1.39"),
 		client.FromEnv,
 	)
 }

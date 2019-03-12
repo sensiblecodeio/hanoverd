@@ -19,6 +19,8 @@ import (
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/jsonmessage"
+	controlapi "github.com/moby/buildkit/api/services/control"
+
 	git "github.com/sensiblecodeio/git-prep-directory"
 )
 
@@ -186,12 +188,14 @@ func constructRuntime(c *docker.Client, dockerImage string) (string, error) {
 	imageName := dockerImage + "-runtime"
 
 	resp, err := c.ImageBuild(context.TODO(), stdout, types.ImageBuildOptions{
-		Remove: true,
-		Tags:   []string{imageName},
+		Remove:  true,
+		Tags:    []string{imageName},
+		Version: types.BuilderBuildKit,
 	})
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 
 	_, err = io.Copy(os.Stderr, resp.Body)
 	if err != nil {
@@ -343,15 +347,58 @@ func DockerBuildDirectory(c *docker.Client, name, path string) error {
 		context.TODO(),
 		buildCtx,
 		types.ImageBuildOptions{
-			Remove: true,
-			Tags:   []string{name},
+			Remove:  true,
+			Tags:    []string{name},
+			Version: types.BuilderBuildKit,
 		},
 	)
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
+	// n, err := io.Copy(os.Stderr, resp.Body)
+	// log.Printf("read %d bytes", n)
 
-	err = jsonmessage.DisplayJSONMessagesStream(resp.Body, os.Stderr, 0, false, nil)
+	writeAux := func(msg jsonmessage.JSONMessage) {
+		if msg.ID == "moby.image.id" {
+			var result types.BuildResult
+			if err := json.Unmarshal(*msg.Aux, &result); err != nil {
+				log.Printf("failed to parse aux message: %v", err)
+			}
+			log.Printf("built image %q", result.ID)
+			// imageID = result.ID
+			return
+		}
+		// t.write(msg)
+
+		if msg.ID != "moby.buildkit.trace" {
+			return
+		}
+
+		var dt []byte
+		// ignoring all messages that are not understood
+		if err := json.Unmarshal(*msg.Aux, &dt); err != nil {
+			return
+		}
+		var resp controlapi.StatusResponse
+
+		if err := (&resp).Unmarshal(dt); err != nil {
+			return
+		}
+
+		for _, vertex := range resp.Vertexes {
+			if vertex.GetCompleted() != nil {
+				log.Printf("  %s", vertex.GetName())
+			}
+		}
+		for _, status := range resp.Statuses {
+			if status.GetCompleted() != nil {
+				log.Printf("  %s", status.GetID())
+			}
+		}
+	}
+
+	err = jsonmessage.DisplayJSONMessagesStream(resp.Body, os.Stderr, 0, false, writeAux)
 	return err
 }
 
