@@ -77,8 +77,8 @@ func InitializeTLS(internalIPStr string) (*tls.Config, error) {
 		NotAfter:  time.Now().AddDate(2, 0, 0),     // 2 years
 
 		BasicConstraintsValid: true,
-		IsCA:           true, // We are an authority for ourselves.
-		MaxPathLenZero: true, // We're a self signed cert.
+		IsCA:                  true, // We are an authority for ourselves.
+		MaxPathLenZero:        true, // We're a self signed cert.
 
 		ExtKeyUsage: []x509.ExtKeyUsage{
 			x509.ExtKeyUsageClientAuth,
