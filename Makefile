@@ -1,15 +1,6 @@
 all: hanoverd
 
-# So that make knows about hanoverd's other dependencies.
--include hanoverd.deps
-
-# Compute a file that looks like "hanoverd: file.go" for all go source files
-# that hanoverd depends on.
-hanoverd.deps:
-	./generate-deps.sh hanoverd . > $@
-
-hanoverd: hanoverd.deps
-	# Build hanoverd using
+hanoverd: FORCE
 	go generate
 	docker build -t hanoverd-buildtime .
 	docker run --rm hanoverd-buildtime cat /go/bin/hanoverd > ./hanoverd
@@ -27,6 +18,4 @@ test: hanoverd iptables
 	PATH=$$PWD:$$PATH go test -v ./tests
 
 # GNU Make instructions
-.PHONY: release test
-# Required for hanoverd.deps
-.DELETE_ON_ERROR:
+.PHONY: release test FORCE
