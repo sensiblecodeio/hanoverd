@@ -8,6 +8,7 @@ hanoverd: FORCE
 
 release: hanoverd
 	mv hanoverd hanoverd_linux_amd64
+	# https://github.com/robertkrimen/gphr
 	gphr release -keep=true hanoverd_linux_amd64
 
 iptables:
