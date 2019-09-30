@@ -15,7 +15,6 @@ require (
 	github.com/google/go-cmp v0.2.0 // indirect
 	github.com/gorilla/mux v1.7.0 // indirect
 	github.com/gorilla/websocket v1.4.0 // indirect
-	github.com/moby/buildkit v0.3.3
 	github.com/morikuni/aec v0.0.0-20170113033406-39771216ff4c // indirect
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
