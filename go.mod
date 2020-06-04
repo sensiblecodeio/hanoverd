@@ -5,7 +5,6 @@ go 1.14
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
 	github.com/Microsoft/go-winio v0.4.12 // indirect
-	github.com/codegangsta/cli v1.20.0
 	github.com/containerd/continuity v0.0.0-20181203112020-004b46473808 // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect
 	github.com/docker/docker v0.7.3-0.20190309235953-33c3200e0d16
@@ -24,6 +23,7 @@ require (
 	github.com/sensiblecodeio/git-prep-directory v0.0.0-20180712161016-0daf5738b16c
 	github.com/sensiblecodeio/hookbot v0.0.0-20190221091405-5e96b6d4c578
 	github.com/sirupsen/logrus v1.4.0 // indirect
+	github.com/urfave/cli v1.20.0
 	github.com/vaughan0/go-ini v0.0.0-20130923145212-a98ad7ee00ec // indirect
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a // indirect
 	golang.org/x/sys v0.0.0-20190312061237-fead79001313

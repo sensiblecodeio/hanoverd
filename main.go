@@ -18,10 +18,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/codegangsta/cli"
 	"github.com/docker/go-connections/nat"
 	"github.com/pwaller/barrier"
 	"github.com/sensiblecodeio/hookbot/pkg/listen"
+	"github.com/urfave/cli"
 
 	"github.com/sensiblecodeio/hanoverd/pkg/builder"
 	"github.com/sensiblecodeio/hanoverd/pkg/iptables"
