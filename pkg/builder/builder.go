@@ -11,10 +11,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/codegangsta/cli"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/sensiblecodeio/hookbot/pkg/listen"
+	"github.com/urfave/cli"
 
 	"github.com/sensiblecodeio/hanoverd/pkg/source"
 	"github.com/sensiblecodeio/hanoverd/pkg/util"
