@@ -18,8 +18,8 @@ import (
 	"github.com/docker/docker/api/types/network"
 	docker "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/pwaller/barrier"
 
+	"github.com/sensiblecodeio/barrier"
 	"github.com/sensiblecodeio/hanoverd/pkg/source"
 )
 

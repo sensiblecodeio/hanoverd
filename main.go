@@ -19,7 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/docker/go-connections/nat"
-	"github.com/pwaller/barrier"
+	"github.com/sensiblecodeio/barrier"
 	"github.com/sensiblecodeio/hookbot/pkg/listen"
 	"github.com/urfave/cli"
 
