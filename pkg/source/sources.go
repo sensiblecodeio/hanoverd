@@ -216,6 +216,7 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 		},
 		&container.HostConfig{},
 		&network.NetworkingConfig{},
+		nil,
 		"",
 	)
 	if err != nil {
