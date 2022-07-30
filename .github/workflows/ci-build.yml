@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       # This permissions change wasn't previously needed, but
       # without it the tests fail as iptables cannot access the lock file.
