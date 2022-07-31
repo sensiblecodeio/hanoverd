@@ -8,8 +8,8 @@ require (
 	github.com/docker/go-units v0.4.0
 	github.com/sensiblecodeio/barrier v0.1.0
 	github.com/sensiblecodeio/git-prep-directory v0.2.0
-	github.com/sensiblecodeio/hookbot v0.10.0
-	github.com/urfave/cli v1.22.5
+	github.com/sensiblecodeio/hookbot v0.11.0
+	github.com/urfave/cli v1.22.9
 	golang.org/x/sys v0.0.0-20220319134239-a9b59b0215f8
 )
 
@@ -19,7 +19,7 @@ require (
 	github.com/Microsoft/hcsshim v0.9.2 // indirect
 	github.com/containerd/cgroups v1.0.3 // indirect
 	github.com/containerd/containerd v1.6.1 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.1 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/docker/distribution v2.8.1+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
