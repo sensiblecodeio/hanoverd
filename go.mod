@@ -6,7 +6,7 @@ require (
 	github.com/docker/docker v20.10.17+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
-	github.com/sensiblecodeio/barrier v0.1.0
+	github.com/sensiblecodeio/barrier v0.2.0
 	github.com/sensiblecodeio/git-prep-directory v0.3.0
 	github.com/sensiblecodeio/hookbot v0.11.0
 	github.com/urfave/cli v1.22.9
