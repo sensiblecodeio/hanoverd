@@ -7,10 +7,10 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
 	github.com/sensiblecodeio/barrier v0.1.0
-	github.com/sensiblecodeio/git-prep-directory v0.2.0
+	github.com/sensiblecodeio/git-prep-directory v0.3.0
 	github.com/sensiblecodeio/hookbot v0.11.0
 	github.com/urfave/cli v1.22.9
-	golang.org/x/sys v0.0.0-20220319134239-a9b59b0215f8
+	golang.org/x/sys v0.0.0-20220422013727-9388b58f7150
 )
 
 require (
