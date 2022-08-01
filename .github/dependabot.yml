@@ -11,6 +11,6 @@ updates:
       interval: "daily"
 
   - package-ecosystem: "docker"
-    directory: "/tests/multiple-ports/"
+    directory: "/tests/multiple-ports"
     schedule:
       interval: "daily"
