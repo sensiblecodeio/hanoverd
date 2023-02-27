@@ -4,4 +4,4 @@ CMD ["multiple-ports"]
 EXPOSE 80 443
 
 COPY . /go/src/multiple-ports
-RUN go install -v multiple-ports
+RUN GO111MODULE=auto go install -v /go/src/multiple-ports

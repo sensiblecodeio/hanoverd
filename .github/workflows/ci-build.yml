@@ -14,15 +14,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # This permissions change wasn't previously needed, but
-      # without it the tests fail as iptables cannot access the lock file.
-      # It is preferable to running the tests as root.
-      # iptables within GitHub Actions' version of Ubuntu is
-      # version 1.8.4 as of 2021-03-18; more recent versions of iptables allow
-      # setting the lock file via the environment variable XTABLES_LOCKFILE.
-      - name: Set permissions on xtables.lock file
-        run: sudo chmod o+rw /run/xtables.lock
-
       - name: Run tests
+        env:
+          XTABLES_LOCKFILE: /tmp/xtables.lock
         run:
           make test
