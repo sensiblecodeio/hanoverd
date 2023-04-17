@@ -10,7 +10,7 @@ require (
 	github.com/sensiblecodeio/git-prep-directory v0.3.0
 	github.com/sensiblecodeio/hookbot v0.11.0
 	github.com/urfave/cli v1.22.9
-	golang.org/x/sys v0.0.0-20220731174439-a90be440212d
+	golang.org/x/sys v0.5.0
 )
 
 require (
@@ -37,5 +37,5 @@ require (
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/vaughan0/go-ini v0.0.0-20130923145212-a98ad7ee00ec // indirect
 	go.opencensus.io v0.23.0 // indirect
-	golang.org/x/net v0.0.0-20220728211354-c7608f3a8462 // indirect
+	golang.org/x/net v0.7.0 // indirect
 )
