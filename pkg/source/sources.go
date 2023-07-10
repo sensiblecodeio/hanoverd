@@ -14,11 +14,11 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/builder/dockerignore"
 	docker "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/moby/buildkit/frontend/dockerfile/dockerignore"
 	git "github.com/sensiblecodeio/git-prep-directory"
 )
 
