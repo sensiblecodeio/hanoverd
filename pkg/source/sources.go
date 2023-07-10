@@ -14,11 +14,11 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/builder/dockerignore"
 	docker "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/moby/buildkit/frontend/dockerfile/dockerignore"
+	"github.com/moby/patternmatcher"
 	git "github.com/sensiblecodeio/git-prep-directory"
 )
 
@@ -388,8 +388,8 @@ func contextFromDir(contextDir string) (io.ReadCloser, error) {
 	// parses the Dockerfile. Ignore errors here, as they will have been
 	// caught by validateContextDirectory above.
 	var includes = []string{"."}
-	keepThem1, _ := fileutils.Matches(".dockerignore", excludes)
-	keepThem2, _ := fileutils.Matches(relDockerfile, excludes)
+	keepThem1, _ := patternmatcher.Matches(".dockerignore", excludes)
+	keepThem2, _ := patternmatcher.Matches(relDockerfile, excludes)
 	if keepThem1 || keepThem2 {
 		includes = append(includes, ".dockerignore", relDockerfile)
 	}
@@ -432,7 +432,7 @@ func validateContextDirectory(srcPath string, excludes []string) error {
 		// skip this directory/file if it's not in the path, it won't get added to the context
 		if relFilePath, err := filepath.Rel(contextRoot, filePath); err != nil {
 			return err
-		} else if skip, err := fileutils.Matches(relFilePath, excludes); err != nil {
+		} else if skip, err := patternmatcher.Matches(relFilePath, excludes); err != nil {
 			return err
 		} else if skip {
 			if f.IsDir() {
