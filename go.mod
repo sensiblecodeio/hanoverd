@@ -12,13 +12,13 @@ require (
 	github.com/sensiblecodeio/git-prep-directory v0.3.0
 	github.com/sensiblecodeio/hookbot v0.11.0
 	github.com/urfave/cli v1.22.14
-	golang.org/x/sys v0.10.0
+	golang.org/x/sys v0.13.0
 )
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/containerd/containerd v1.7.2 // indirect
+	github.com/containerd/containerd v1.7.11 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -35,7 +35,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/vaughan0/go-ini v0.0.0-20130923145212-a98ad7ee00ec // indirect
 	golang.org/x/mod v0.12.0 // indirect
-	golang.org/x/net v0.12.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/tools v0.11.0 // indirect
 	gotest.tools/v3 v3.5.0 // indirect
 )
