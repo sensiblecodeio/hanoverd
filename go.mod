@@ -6,7 +6,7 @@ require (
 	github.com/docker/docker v24.0.4+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.5.0
-	github.com/moby/buildkit v0.11.6
+	github.com/moby/buildkit v0.12.5
 	github.com/moby/patternmatcher v0.5.0
 	github.com/sensiblecodeio/barrier v0.2.0
 	github.com/sensiblecodeio/git-prep-directory v0.3.0
@@ -23,7 +23,7 @@ require (
 	github.com/docker/distribution v2.8.2+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
-	github.com/klauspost/compress v1.16.7 // indirect
+	github.com/klauspost/compress v1.17.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
