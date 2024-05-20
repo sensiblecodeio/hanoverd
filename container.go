@@ -133,7 +133,7 @@ func (c *Container) CopyOutput() error {
 	body, err := c.client.ContainerAttach(
 		context.TODO(),
 		c.containerID,
-		types.ContainerAttachOptions{
+		container.AttachOptions{
 			Stdout: true,
 			Stderr: true,
 			Logs:   true, // Capture messages from process start.
@@ -294,7 +294,7 @@ func (c *Container) Start() error {
 
 	ctx := context.TODO()
 
-	err := c.client.ContainerStart(ctx, c.containerID, types.ContainerStartOptions{})
+	err := c.client.ContainerStart(ctx, c.containerID, container.StartOptions{})
 	if err != nil {
 		return err
 	}
@@ -411,7 +411,7 @@ func (c *Container) Run(imageSource source.ImageSource, payload []byte) (int64, 
 }
 
 func (c *Container) Delete() {
-	err := c.client.ContainerRemove(context.TODO(), c.containerID, types.ContainerRemoveOptions{
+	err := c.client.ContainerRemove(context.TODO(), c.containerID, container.RemoveOptions{
 		RemoveVolumes: true,
 		Force:         true,
 	})
