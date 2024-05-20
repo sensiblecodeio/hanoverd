@@ -241,7 +241,7 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 		cr, err2 := c.ContainerAttach(
 			context.TODO(),
 			containerID,
-			types.ContainerAttachOptions{
+			container.AttachOptions{
 				Logs:   true,
 				Stdout: true,
 				Stderr: true,
@@ -265,14 +265,14 @@ func DockerRun(c *docker.Client, imageName string) (io.ReadCloser, error) {
 		attached <- struct{}{}
 	}
 
-	err = c.ContainerStart(context.TODO(), containerID, types.ContainerStartOptions{})
+	err = c.ContainerStart(context.TODO(), containerID, container.StartOptions{})
 	if err != nil {
 		log.Printf("Start container... failed: %v", err)
 		return nil, err
 	}
 
 	removeContainer := func() {
-		err2 := c.ContainerRemove(context.TODO(), containerID, types.ContainerRemoveOptions{
+		err2 := c.ContainerRemove(context.TODO(), containerID, container.RemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		})
